@@ -21,6 +21,17 @@ import {
   ReminderService,
   type ReminderRepository
 } from "./modules/reminders/reminder.service.js";
+import { reportRoutes } from "./modules/reports/report.routes.js";
+import {
+  PrismaReportRepository,
+  ReportService,
+  type ReportRepository
+} from "./modules/reports/report.service.js";
+import {
+  PrismaRewardRepository,
+  RewardService,
+  type RewardRepository
+} from "./modules/reports/reward.service.js";
 import { settingRoutes } from "./modules/settings/setting.routes.js";
 import { SettingService } from "./modules/settings/setting.service.js";
 import { ApproverService } from "./modules/users/approver.service.js";
@@ -42,11 +53,13 @@ export interface BuildAppOptions {
   logRepository?: LogRepository;
   approvalRepository?: ApprovalRepository;
   reminderRepository?: ReminderRepository;
+  reportRepository?: ReportRepository;
+  rewardRepository?: RewardRepository;
 }
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.env.NODE_ENV !== "test" });
-  const database = options.authRepository && options.administrationRepository && options.logRepository && options.approvalRepository && options.reminderRepository
+  const database = options.authRepository && options.administrationRepository && options.logRepository && options.approvalRepository && options.reminderRepository && options.reportRepository && options.rewardRepository
     ? null
     : createDatabase(options.env);
   const authRepository = options.authRepository ?? new PrismaAuthRepository(database!);
@@ -55,6 +68,8 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const logRepository = options.logRepository ?? new PrismaLogRepository(database!);
   const approvalRepository = options.approvalRepository ?? new PrismaApprovalRepository(database!);
   const reminderRepository = options.reminderRepository ?? new PrismaReminderRepository(database!);
+  const reportRepository = options.reportRepository ?? new PrismaReportRepository(database!);
+  const rewardRepository = options.rewardRepository ?? new PrismaRewardRepository(database!);
   const authService = new AuthService(authRepository);
   const userService = new UserService(administrationRepository);
   const approverService = new ApproverService(administrationRepository);
@@ -62,6 +77,8 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const logService = new LogService(logRepository, approverService);
   const approvalService = new ApprovalService(approvalRepository);
   const reminderService = new ReminderService(reminderRepository);
+  const reportService = new ReportService(reportRepository);
+  const rewardService = new RewardService(rewardRepository);
   const reminderSettings = options.env.NODE_ENV === "production"
     ? await settingService.get()
     : {
@@ -88,6 +105,12 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(schedulerPlugin, {
     jobs: reminderJobs,
     enabled: options.env.NODE_ENV === "production"
+  });
+  await app.register(reportRoutes, {
+    reportService,
+    rewardService,
+    approverService,
+    authService
   });
 
   app.get("/api/health", async () => ({ status: "ok" as const }));
