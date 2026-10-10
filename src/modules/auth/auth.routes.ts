@@ -56,7 +56,8 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
   );
 
   app.get("/api/auth/me", { preHandler: app.requireUser }, async (request) => ({
-    user: publicUser(request.authenticated!.user)
+    user: publicUser(request.authenticated!.user),
+    csrfToken: request.authenticated!.session.csrfSecret
   }));
 
   app.post(
