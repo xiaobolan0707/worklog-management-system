@@ -1,5 +1,7 @@
 import cookie from "@fastify/cookie";
+import staticFiles from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
+import { fileURLToPath } from "node:url";
 
 import type { AppEnv } from "./config/env.js";
 import { auditRoutes } from "./modules/audit/audit.routes.js";
@@ -128,6 +130,19 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(auditRoutes, { auditService });
 
   app.get("/api/health", async () => ({ status: "ok" as const }));
+
+  if (options.env.NODE_ENV === "production") {
+    await app.register(staticFiles, {
+      root: fileURLToPath(new URL("../web", import.meta.url)),
+      wildcard: false
+    });
+    app.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith("/api/")) {
+        return reply.code(404).send({ code: "NOT_FOUND", message: "接口不存在" });
+      }
+      return reply.sendFile("index.html");
+    });
+  }
 
   await app.ready();
   return app;
