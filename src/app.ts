@@ -2,6 +2,12 @@ import cookie from "@fastify/cookie";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import type { AppEnv } from "./config/env.js";
+import { auditRoutes } from "./modules/audit/audit.routes.js";
+import {
+  AuditService,
+  PrismaAuditQueryRepository,
+  type AuditQueryRepository
+} from "./modules/audit/audit.service.js";
 import { PrismaAuthRepository, type AuthRepository } from "./modules/auth/auth.repository.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { AuthService } from "./modules/auth/auth.service.js";
@@ -42,8 +48,10 @@ import {
   type AdministrationRepository
 } from "./modules/users/user.service.js";
 import { authenticatePlugin } from "./plugins/authenticate.js";
+import { csrfPlugin } from "./plugins/csrf.js";
 import { createDatabase } from "./plugins/database.js";
 import { rateLimitPlugin } from "./plugins/rate-limit.js";
+import { errorHandlerPlugin } from "./plugins/error-handler.js";
 import { schedulerPlugin } from "./plugins/scheduler.js";
 
 export interface BuildAppOptions {
@@ -55,11 +63,12 @@ export interface BuildAppOptions {
   reminderRepository?: ReminderRepository;
   reportRepository?: ReportRepository;
   rewardRepository?: RewardRepository;
+  auditQueryRepository?: AuditQueryRepository;
 }
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.env.NODE_ENV !== "test" });
-  const database = options.authRepository && options.administrationRepository && options.logRepository && options.approvalRepository && options.reminderRepository && options.reportRepository && options.rewardRepository
+  const database = options.authRepository && options.administrationRepository && options.logRepository && options.approvalRepository && options.reminderRepository && options.reportRepository && options.rewardRepository && options.auditQueryRepository
     ? null
     : createDatabase(options.env);
   const authRepository = options.authRepository ?? new PrismaAuthRepository(database!);
@@ -70,6 +79,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const reminderRepository = options.reminderRepository ?? new PrismaReminderRepository(database!);
   const reportRepository = options.reportRepository ?? new PrismaReportRepository(database!);
   const rewardRepository = options.rewardRepository ?? new PrismaRewardRepository(database!);
+  const auditQueryRepository = options.auditQueryRepository ?? new PrismaAuditQueryRepository(database!);
   const authService = new AuthService(authRepository);
   const userService = new UserService(administrationRepository);
   const approverService = new ApproverService(administrationRepository);
@@ -79,6 +89,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const reminderService = new ReminderService(reminderRepository);
   const reportService = new ReportService(reportRepository);
   const rewardService = new RewardService(rewardRepository);
+  const auditService = new AuditService(auditQueryRepository);
   const reminderSettings = options.env.NODE_ENV === "production"
     ? await settingService.get()
     : {
@@ -93,9 +104,11 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     app.addHook("onClose", async () => database.$disconnect());
   }
 
+  await app.register(errorHandlerPlugin);
   await app.register(cookie);
   await app.register(rateLimitPlugin);
   await app.register(authenticatePlugin, { authService });
+  await app.register(csrfPlugin);
   await app.register(authRoutes, { env: options.env, authService });
   await app.register(userRoutes, { userService, approverService, authService });
   await app.register(settingRoutes, { settingService, authService });
@@ -112,6 +125,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     approverService,
     authService
   });
+  await app.register(auditRoutes, { auditService });
 
   app.get("/api/health", async () => ({ status: "ok" as const }));
 

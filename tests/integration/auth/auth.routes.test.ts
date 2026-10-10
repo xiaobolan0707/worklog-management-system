@@ -61,7 +61,8 @@ describe("authentication routes", () => {
     const response = await login(app, "incorrect-password");
 
     expect(response.statusCode).toBe(401);
-    expect(response.json()).toEqual({ code: "INVALID_CREDENTIALS", message: "用户名或密码错误" });
+    expect(response.json()).toMatchObject({ code: "INVALID_CREDENTIALS", message: "用户名或密码错误" });
+    expect(response.json().requestId).toBeTruthy();
     expect(repository.users.get("employee-1")?.failedLoginCount).toBe(1);
     expect(repository.loginAttempts.at(-1)?.outcome).toBe("FAILURE");
   });
