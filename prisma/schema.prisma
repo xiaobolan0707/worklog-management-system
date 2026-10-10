@@ -1,0 +1,313 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  EMPLOYEE
+  LEADER
+  MANAGEMENT
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum LogStatus {
+  DRAFT
+  SUBMITTED
+  IN_REVIEW
+  RETURNED
+  ARCHIVED
+}
+
+enum WorkColor {
+  GREEN
+  RED
+  GRAY
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  RETURNED
+  SUPERSEDED
+}
+
+enum ReminderKind {
+  LOG_DUE
+  LOG_OVERDUE
+  APPROVAL_ASSIGNED
+  APPROVAL_OVERDUE
+  LOG_RETURNED
+  APPROVAL_COMPLETED
+}
+
+enum RewardPeriod {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum RewardOutcome {
+  REWARD
+  IMPROVEMENT
+}
+
+enum LoginOutcome {
+  SUCCESS
+  FAILURE
+  LOCKED
+}
+
+model Department {
+  id              String           @id @default(cuid())
+  name            String           @unique @db.VarChar(100)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  users           User[]
+  rewardDecisions RewardDecision[]
+
+  @@map("departments")
+}
+
+model User {
+  id                 String          @id @default(cuid())
+  username           String          @unique @db.VarChar(64)
+  passwordHash       String          @map("password_hash") @db.VarChar(255)
+  displayName        String?         @map("display_name") @db.VarChar(100)
+  role               Role
+  accountStatus      AccountStatus   @default(ACTIVE) @map("account_status")
+  departmentId       String?         @map("department_id")
+  mustChangePassword Boolean         @default(true) @map("must_change_password")
+  failedLoginCount   Int             @default(0) @map("failed_login_count")
+  lockedUntil        DateTime?       @map("locked_until")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+  department         Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  approverAssignments EmployeeApprover[] @relation("ApproverAssignments")
+  employeeApprovers  EmployeeApprover[] @relation("EmployeeAssignments")
+  dailyLogs          DailyLog[]      @relation("EmployeeLogs")
+  logVersions        LogVersion[]    @relation("VersionAuthor")
+  approvalSteps      ApprovalStep[]  @relation("ApprovalActor")
+  colorChanges       ColorChange[]   @relation("ColorChanger")
+  reminders          Reminder[]      @relation("ReminderRecipient")
+  rewardSubjects     RewardDecision[] @relation("RewardSubject")
+  rewardDecisions    RewardDecision[] @relation("RewardDecider")
+  sessions           Session[]
+  loginAttempts      LoginAttempt[]
+  auditActions       AuditEvent[]    @relation("AuditActor")
+  auditSubjects      AuditEvent[]    @relation("AuditSubject")
+  settingChanges     SystemSetting[] @relation("SettingUpdater")
+
+  @@index([departmentId])
+  @@map("users")
+}
+
+model EmployeeApprover {
+  id         String   @id @default(cuid())
+  employeeId String   @map("employee_id")
+  approverId String   @map("approver_id")
+  position   Int
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  employee   User     @relation("EmployeeAssignments", fields: [employeeId], references: [id], onDelete: Cascade)
+  approver   User     @relation("ApproverAssignments", fields: [approverId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, position])
+  @@unique([employeeId, approverId])
+  @@index([approverId])
+  @@map("employee_approvers")
+}
+
+model DailyLog {
+  id              String         @id @default(cuid())
+  employeeId      String         @map("employee_id")
+  workDate        DateTime       @map("work_date") @db.Date
+  status          LogStatus      @default(DRAFT)
+  color           WorkColor?
+  submissionCount Int            @default(0) @map("submission_count")
+  submittedAt     DateTime?      @map("submitted_at")
+  archivedAt      DateTime?      @map("archived_at")
+  version         Int            @default(0)
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  employee        User           @relation("EmployeeLogs", fields: [employeeId], references: [id], onDelete: Restrict)
+  items           LogItem[]
+  versions        LogVersion[]
+  approvalSteps   ApprovalStep[]
+  colorChanges    ColorChange[]
+  reminders       Reminder[]
+
+  @@unique([employeeId, workDate])
+  @@index([workDate, status])
+  @@map("daily_logs")
+}
+
+model LogItem {
+  id               String   @id @default(cuid())
+  dailyLogId       String   @map("daily_log_id")
+  position         Int
+  content          String   @db.Text
+  completed        Boolean  @default(false)
+  unfinishedReason String?  @map("unfinished_reason") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  dailyLog         DailyLog @relation(fields: [dailyLogId], references: [id], onDelete: Cascade)
+
+  @@unique([dailyLogId, position])
+  @@map("log_items")
+}
+
+model LogVersion {
+  id            String   @id @default(cuid())
+  dailyLogId    String   @map("daily_log_id")
+  versionNumber Int      @map("version_number")
+  snapshot      Json
+  createdById   String   @map("created_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  dailyLog      DailyLog @relation(fields: [dailyLogId], references: [id], onDelete: Cascade)
+  createdBy     User     @relation("VersionAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([dailyLogId, versionNumber])
+  @@index([createdById])
+  @@map("log_versions")
+}
+
+model ApprovalStep {
+  id         String         @id @default(cuid())
+  dailyLogId String         @map("daily_log_id")
+  approverId String         @map("approver_id")
+  position   Int
+  status     ApprovalStatus @default(PENDING)
+  color      WorkColor?
+  comment    String?        @db.Text
+  actedAt    DateTime?      @map("acted_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+  dailyLog   DailyLog       @relation(fields: [dailyLogId], references: [id], onDelete: Cascade)
+  approver   User           @relation("ApprovalActor", fields: [approverId], references: [id], onDelete: Restrict)
+
+  @@unique([dailyLogId, position])
+  @@index([approverId, status])
+  @@map("approval_steps")
+}
+
+model ColorChange {
+  id          String    @id @default(cuid())
+  dailyLogId  String    @map("daily_log_id")
+  changedById String    @map("changed_by_id")
+  fromColor   WorkColor @map("from_color")
+  toColor     WorkColor @map("to_color")
+  reason      String    @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+  dailyLog    DailyLog  @relation(fields: [dailyLogId], references: [id], onDelete: Restrict)
+  changedBy   User      @relation("ColorChanger", fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([dailyLogId, createdAt])
+  @@map("color_changes")
+}
+
+model Reminder {
+  id               String       @id @default(cuid())
+  recipientId      String       @map("recipient_id")
+  kind             ReminderKind
+  deduplicationKey String       @map("deduplication_key") @db.VarChar(191)
+  title            String       @db.VarChar(120)
+  body             String       @db.Text
+  relatedLogId     String?      @map("related_log_id")
+  readAt           DateTime?    @map("read_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  recipient        User         @relation("ReminderRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  relatedLog       DailyLog?    @relation(fields: [relatedLogId], references: [id], onDelete: Cascade)
+
+  @@unique([recipientId, kind, deduplicationKey])
+  @@index([recipientId, readAt, createdAt])
+  @@map("reminders")
+}
+
+model RewardDecision {
+  id           String        @id @default(cuid())
+  employeeId   String        @map("employee_id")
+  departmentId String?       @map("department_id")
+  decidedById  String        @map("decided_by_id")
+  periodType   RewardPeriod  @map("period_type")
+  periodStart  DateTime      @map("period_start") @db.Date
+  periodEnd    DateTime      @map("period_end") @db.Date
+  redCount     Int           @map("red_count")
+  grayCount    Int           @map("gray_count")
+  outcome      RewardOutcome
+  note         String?       @db.Text
+  decidedAt    DateTime      @default(now()) @map("decided_at")
+  employee     User          @relation("RewardSubject", fields: [employeeId], references: [id], onDelete: Restrict)
+  department   Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  decidedBy    User          @relation("RewardDecider", fields: [decidedById], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, periodType, periodStart, periodEnd])
+  @@index([departmentId, periodStart, periodEnd])
+  @@map("reward_decisions")
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(128)
+  csrfSecret String    @map("csrf_secret") @db.VarChar(128)
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("sessions")
+}
+
+model LoginAttempt {
+  id        String       @id @default(cuid())
+  username  String       @db.VarChar(64)
+  userId    String?      @map("user_id")
+  ipAddress String?      @map("ip_address") @db.VarChar(64)
+  outcome   LoginOutcome
+  createdAt DateTime     @default(now()) @map("created_at")
+  user      User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([username, createdAt])
+  @@map("login_attempts")
+}
+
+model AuditEvent {
+  id            String   @id @default(cuid())
+  actorId       String?  @map("actor_id")
+  subjectUserId String?  @map("subject_user_id")
+  action        String   @db.VarChar(80)
+  entityType    String   @map("entity_type") @db.VarChar(80)
+  entityId      String   @map("entity_id") @db.VarChar(191)
+  metadata      Json
+  ipAddress     String?  @map("ip_address") @db.VarChar(64)
+  requestId     String?  @map("request_id") @db.VarChar(128)
+  createdAt     DateTime @default(now()) @map("created_at")
+  actor         User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  subjectUser   User?    @relation("AuditSubject", fields: [subjectUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([subjectUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_events")
+}
+
+model SystemSetting {
+  key         String   @id @db.VarChar(100)
+  value       Json
+  updatedById String?  @map("updated_by_id")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedBy   User?    @relation("SettingUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("system_settings")
+}
