@@ -1,17 +1,7 @@
-import { scrypt as scryptCallback, randomBytes } from "node:crypto";
-import { promisify } from "node:util";
-
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient, Role } from "../src/generated/prisma/client.js";
-
-const scrypt = promisify(scryptCallback);
-
-async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16);
-  const derived = (await scrypt(password, salt, 64)) as Buffer;
-  return `scrypt:${salt.toString("base64url")}:${derived.toString("base64url")}`;
-}
+import { hashPassword } from "../src/modules/auth/password.js";
 
 const databaseUrl = process.env["DATABASE_URL"];
 const username = process.env["ADMIN_USERNAME"];
