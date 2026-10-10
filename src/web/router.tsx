@@ -7,6 +7,15 @@ import { LoginPage } from "./pages/LoginPage.js";
 import { EmployeeStatsPage } from "./pages/employee/EmployeeStatsPage.js";
 import { HistoryPage } from "./pages/employee/HistoryPage.js";
 import { TodayLogPage } from "./pages/employee/TodayLogPage.js";
+import { ApprovalPage } from "./pages/leader/ApprovalPage.js";
+import { LogSearchPage } from "./pages/leader/LogSearchPage.js";
+import { DashboardPage } from "./pages/management/DashboardPage.js";
+import { RewardsPage } from "./pages/management/RewardsPage.js";
+import { UsersPage } from "./pages/admin/UsersPage.js";
+import { DepartmentsPage } from "./pages/admin/DepartmentsPage.js";
+import { ApproversPage } from "./pages/admin/ApproversPage.js";
+import { SettingsPage } from "./pages/admin/SettingsPage.js";
+import { AuditPage } from "./pages/admin/AuditPage.js";
 
 function Placeholder({ title }: { title: string }) {
   return <main className="page"><div className="page-head"><div><p className="eyebrow">WORKSPACE</p><h1>{title}</h1><p>功能页面正在加载。</p></div></div></main>;
@@ -33,7 +42,7 @@ export function AppRouter() {
         <Route path="/employee/today" element={<TodayLogPage />} />
         <Route path="/employee/history" element={<HistoryPage />} />
         <Route path="/employee/stats" element={<EmployeeStatsPage />} />
-        {Object.values(navTitles).filter(([path]) => !path.startsWith("/employee/")).map(([path, title]) => <Route key={path} path={path} element={<Placeholder title={title} />} />)}
+        <Route path="/leader/approvals" element={<ApprovalPage/>}/><Route path="/leader/logs" element={<LogSearchPage/>}/><Route path="/reports/departments" element={<DashboardPage/>}/><Route path="/management" element={<DashboardPage/>}/><Route path="/management/rewards" element={<RewardsPage/>}/><Route path="/admin/users" element={<UsersPage/>}/><Route path="/admin/departments" element={<DepartmentsPage/>}/><Route path="/admin/approvers" element={<ApproversPage/>}/><Route path="/admin/settings" element={<SettingsPage/>}/><Route path="/admin/audit" element={<AuditPage/>}/>
       </Routes>
     </AppShell>
   );
