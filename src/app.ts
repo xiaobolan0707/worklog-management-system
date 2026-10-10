@@ -14,6 +14,13 @@ import { approvalRoutes } from "./modules/approvals/approval.routes.js";
 import { PrismaLogRepository, type LogRepository } from "./modules/logs/log.repository.js";
 import { logRoutes } from "./modules/logs/log.routes.js";
 import { LogService } from "./modules/logs/log.service.js";
+import { ReminderJobs } from "./modules/reminders/reminder.jobs.js";
+import { reminderRoutes } from "./modules/reminders/reminder.routes.js";
+import {
+  PrismaReminderRepository,
+  ReminderService,
+  type ReminderRepository
+} from "./modules/reminders/reminder.service.js";
 import { settingRoutes } from "./modules/settings/setting.routes.js";
 import { SettingService } from "./modules/settings/setting.service.js";
 import { ApproverService } from "./modules/users/approver.service.js";
@@ -26,6 +33,7 @@ import {
 import { authenticatePlugin } from "./plugins/authenticate.js";
 import { createDatabase } from "./plugins/database.js";
 import { rateLimitPlugin } from "./plugins/rate-limit.js";
+import { schedulerPlugin } from "./plugins/scheduler.js";
 
 export interface BuildAppOptions {
   env: AppEnv;
@@ -33,11 +41,12 @@ export interface BuildAppOptions {
   administrationRepository?: AdministrationRepository;
   logRepository?: LogRepository;
   approvalRepository?: ApprovalRepository;
+  reminderRepository?: ReminderRepository;
 }
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.env.NODE_ENV !== "test" });
-  const database = options.authRepository && options.administrationRepository && options.logRepository && options.approvalRepository
+  const database = options.authRepository && options.administrationRepository && options.logRepository && options.approvalRepository && options.reminderRepository
     ? null
     : createDatabase(options.env);
   const authRepository = options.authRepository ?? new PrismaAuthRepository(database!);
@@ -45,12 +54,23 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     ?? new PrismaAdministrationRepository(database!);
   const logRepository = options.logRepository ?? new PrismaLogRepository(database!);
   const approvalRepository = options.approvalRepository ?? new PrismaApprovalRepository(database!);
+  const reminderRepository = options.reminderRepository ?? new PrismaReminderRepository(database!);
   const authService = new AuthService(authRepository);
   const userService = new UserService(administrationRepository);
   const approverService = new ApproverService(administrationRepository);
   const settingService = new SettingService(administrationRepository);
   const logService = new LogService(logRepository, approverService);
   const approvalService = new ApprovalService(approvalRepository);
+  const reminderService = new ReminderService(reminderRepository);
+  const reminderSettings = options.env.NODE_ENV === "production"
+    ? await settingService.get()
+    : {
+        submissionDeadline: "18:00",
+        reminderMinutesBefore: 30,
+        approvalDeadline: "12:00",
+        timezone: "Asia/Shanghai" as const
+      };
+  const reminderJobs = new ReminderJobs(reminderService, reminderRepository, reminderSettings);
 
   if (database) {
     app.addHook("onClose", async () => database.$disconnect());
@@ -64,6 +84,11 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(settingRoutes, { settingService, authService });
   await app.register(logRoutes, { logService, authService });
   await app.register(approvalRoutes, { approvalService, authService });
+  await app.register(reminderRoutes, { reminderService, authService });
+  await app.register(schedulerPlugin, {
+    jobs: reminderJobs,
+    enabled: options.env.NODE_ENV === "production"
+  });
 
   app.get("/api/health", async () => ({ status: "ok" as const }));
 
