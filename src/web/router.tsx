@@ -4,6 +4,9 @@ import { useAuth } from "./auth/AuthProvider.js";
 import { AppShell } from "./components/AppShell.js";
 import { ChangeInitialPasswordPage } from "./pages/ChangeInitialPasswordPage.js";
 import { LoginPage } from "./pages/LoginPage.js";
+import { EmployeeStatsPage } from "./pages/employee/EmployeeStatsPage.js";
+import { HistoryPage } from "./pages/employee/HistoryPage.js";
+import { TodayLogPage } from "./pages/employee/TodayLogPage.js";
 
 function Placeholder({ title }: { title: string }) {
   return <main className="page"><div className="page-head"><div><p className="eyebrow">WORKSPACE</p><h1>{title}</h1><p>功能页面正在加载。</p></div></div></main>;
@@ -27,7 +30,10 @@ export function AppRouter() {
     <AppShell user={auth.user} onLogout={auth.logout}>
       <Routes>
         <Route path="*" element={<Navigate to={homes[auth.user.role]} replace />} />
-        {Object.values(navTitles).map(([path, title]) => <Route key={path} path={path} element={<Placeholder title={title} />} />)}
+        <Route path="/employee/today" element={<TodayLogPage />} />
+        <Route path="/employee/history" element={<HistoryPage />} />
+        <Route path="/employee/stats" element={<EmployeeStatsPage />} />
+        {Object.values(navTitles).filter(([path]) => !path.startsWith("/employee/")).map(([path, title]) => <Route key={path} path={path} element={<Placeholder title={title} />} />)}
       </Routes>
     </AppShell>
   );

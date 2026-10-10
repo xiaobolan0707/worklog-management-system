@@ -1,0 +1,6 @@
+import { useEffect, useState } from "react";
+import { apiRequest } from "../../api/client.js";
+import { StatusBadge } from "../../components/StatusBadge.js";
+import { ApprovalProgress, type ApprovalStepView } from "../../components/logs/ApprovalProgress.js";
+interface HistoryLog { id:string; workDate:string; color:"GREEN"|"RED"|"GRAY"|null; items:{position:number;content:string;completed:boolean;unfinishedReason?:string|null}[]; approvalSteps:ApprovalStepView[] }
+export function HistoryPage(){const[logs,setLogs]=useState<HistoryLog[]>([]);useEffect(()=>{void apiRequest<{logs:HistoryLog[]}>("/logs/mine").then(result=>setLogs(result.logs));},[]);return <main className="page"><div className="page-head"><div><p className="eyebrow">HISTORY</p><h1>历史日志</h1><p>查看每日内容、红灰结果和审批进度。</p></div></div><div className="history-list">{logs.length===0?<section className="panel empty"><strong>暂无历史日志</strong></section>:logs.map(log=><section className="panel history-card" key={log.id}><header><div><p className="eyebrow">{log.workDate}</p><h2>工作日志</h2></div><StatusBadge color={log.color}/></header><ol>{log.items.map(item=><li key={item.position}>{item.content}{!item.completed&&<small>未完成：{item.unfinishedReason}</small>}</li>)}</ol><ApprovalProgress steps={log.approvalSteps}/></section>)}</div></main>}
