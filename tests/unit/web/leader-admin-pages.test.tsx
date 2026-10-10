@@ -19,12 +19,20 @@ describe("leader and administrator pages",()=>{
   });
 
   it("keeps approvers in the configured order",async()=>{
+    vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({users:[
+      {id:"employee-1",username:"employee",displayName:"员工",role:"EMPLOYEE"},
+      {id:"leader-b",username:"leader-b",displayName:"乙领导",role:"LEADER"},
+      {id:"leader-a",username:"leader-a",displayName:"甲领导",role:"LEADER"}
+    ]}),{status:200}));
     const user=userEvent.setup();
     render(<ApproversPage/>);
-    await user.type(screen.getByLabelText("员工 ID"),"employee-1");
-    await user.type(screen.getByLabelText("审批人 ID（每行一个）"),"leader-b\nleader-a");
-    expect(screen.getByText("第 1 级：leader-b")).toBeInTheDocument();
-    expect(screen.getByText("第 2 级：leader-a")).toBeInTheDocument();
+    await user.selectOptions(await screen.findByLabelText("员工"),"employee-1");
+    await user.selectOptions(screen.getByLabelText("添加审批人"),"leader-b");
+    await user.click(screen.getByRole("button",{name:"加入审批链"}));
+    await user.selectOptions(screen.getByLabelText("添加审批人"),"leader-a");
+    await user.click(screen.getByRole("button",{name:"加入审批链"}));
+    expect(screen.getByText("第 1 级：乙领导（leader-b）")).toBeInTheDocument();
+    expect(screen.getByText("第 2 级：甲领导（leader-a）")).toBeInTheDocument();
   });
 
   it("validates schedule settings before saving",async()=>{

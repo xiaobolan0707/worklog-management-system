@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+test.skip(process.env["E2E_RUN"] !== "1", "需要已准备好的验收数据库和账号");
+
 test("new user changes the initial password and keeps the session after refresh", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("用户名").fill(process.env["E2E_EMPLOYEE_USERNAME"] ?? "employee");

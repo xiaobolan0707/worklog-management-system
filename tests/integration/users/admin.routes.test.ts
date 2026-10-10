@@ -66,6 +66,29 @@ async function credentials(app: FastifyInstance, username: string, password: str
 }
 
 describe("administrator organization routes", () => {
+  it("lists users and departments for usable administration screens", async () => {
+    const app = await createApp();
+    const auth = await credentials(app, "admin", "Admin-password-42");
+    await administrationRepository.createDepartment("研发部");
+    await administrationRepository.createUser({
+      username: "employee",
+      displayName: "张三",
+      passwordHash: "hidden",
+      role: "EMPLOYEE",
+      accountStatus: "ACTIVE",
+      departmentId: "department-1",
+      mustChangePassword: true
+    });
+
+    const users = await app.inject({ method: "GET", url: "/api/admin/users", headers: { cookie: auth.cookie } });
+    const departments = await app.inject({ method: "GET", url: "/api/admin/departments", headers: { cookie: auth.cookie } });
+
+    expect(users.statusCode).toBe(200);
+    expect(users.json().users).toEqual([expect.objectContaining({ username: "employee", displayName: "张三" })]);
+    expect(users.body).not.toContain("passwordHash");
+    expect(departments.json().departments).toEqual([{ id: "department-1", name: "研发部" }]);
+  });
+
   it("creates an account with a hashed initial password and rejects duplicate usernames", async () => {
     const app = await createApp();
     const auth = await credentials(app, "admin", "Admin-password-42");

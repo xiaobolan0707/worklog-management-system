@@ -29,6 +29,8 @@ export interface ScheduleSettings {
 
 export interface AdministrationRepository {
   findUserByUsername(username: string): Promise<AdminUserRecord | null>;
+  listUsers(): Promise<AdminUserRecord[]>;
+  listDepartments(): Promise<{ id: string; name: string }[]>;
   createDepartment(name: string): Promise<{ id: string; name: string }>;
   createUser(input: Omit<AdminUserRecord, "id">): Promise<AdminUserRecord>;
   setUserStatus(userId: string, status: AuthAccountStatus): Promise<AdminUserRecord>;
@@ -57,6 +59,14 @@ export function publicAdminUser(user: AdminUserRecord) {
 
 export class UserService {
   constructor(private readonly repository: AdministrationRepository) {}
+
+  listUsers() {
+    return this.repository.listUsers();
+  }
+
+  listDepartments() {
+    return this.repository.listDepartments();
+  }
 
   async createUser(
     actorId: string,
@@ -152,6 +162,26 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
         mustChangePassword: true
       }
     });
+  }
+
+  async listUsers() {
+    return this.database.user.findMany({
+      orderBy: [{ accountStatus: "asc" }, { username: "asc" }],
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        passwordHash: true,
+        role: true,
+        accountStatus: true,
+        departmentId: true,
+        mustChangePassword: true
+      }
+    });
+  }
+
+  listDepartments() {
+    return this.database.department.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
   }
 
   async createDepartment(name: string) {

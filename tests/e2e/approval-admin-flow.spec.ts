@@ -1,2 +1,3 @@
 import{expect,test}from"@playwright/test";
+test.skip(process.env["E2E_RUN"]!=="1","需要已准备好的验收数据库和账号");
 test("administrator and leaders complete an ordered red-gray workflow",async({page})=>{test.skip(!process.env["E2E_ADMIN_USERNAME"],"requires seeded live-stack accounts");await page.goto("/");await page.getByLabel("用户名").fill(process.env["E2E_ADMIN_USERNAME"]!);await page.getByLabel("密码").fill(process.env["E2E_ADMIN_PASSWORD"]!);await page.getByRole("button",{name:"登录"}).click();await expect(page.getByRole("link",{name:"用户管理"})).toBeVisible();await expect(page.getByText(/score|分数|评分/i)).toHaveCount(0);});

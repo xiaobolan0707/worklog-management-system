@@ -49,6 +49,14 @@ export function sendAdministrationError(reply: FastifyReply, error: unknown) {
 export const userRoutes: FastifyPluginAsync<UserRoutesOptions> = async (app, options) => {
   const adminOnly = app.requireRole("ADMIN");
 
+  app.get("/api/admin/users", { preHandler: adminOnly }, async () => ({
+    users: (await options.userService.listUsers()).map(publicAdminUser)
+  }));
+
+  app.get("/api/admin/departments", { preHandler: adminOnly }, async () => ({
+    departments: await options.userService.listDepartments()
+  }));
+
   app.post("/api/admin/users", { preHandler: adminOnly }, async (request, reply) => {
     try {
       verifyCsrf(request, options.authService);

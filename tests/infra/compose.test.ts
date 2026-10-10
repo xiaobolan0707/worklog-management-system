@@ -35,5 +35,6 @@ describe("production compose stack", () => {
     expect(dockerfile.match(/^FROM /gm)?.length).toBeGreaterThanOrEqual(2);
     expect(dockerfile).toMatch(/^USER node$/m);
     expect(dockerfile).toMatch(/^HEALTHCHECK /m);
+    expect(dockerfile).toContain("/app/src ./src");
   });
 });

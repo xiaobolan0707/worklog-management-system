@@ -23,6 +23,14 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
     return [...this.users.values()].find((user) => user.username === username) ?? null;
   }
 
+  async listUsers() {
+    return [...this.users.values()].sort((left, right) => left.username.localeCompare(right.username));
+  }
+
+  async listDepartments() {
+    return [...this.departments.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }
+
   async createDepartment(name: string) {
     const department = { id: `department-${this.departments.size + 1}`, name };
     this.departments.set(department.id, department);
