@@ -186,6 +186,7 @@ model ApprovalStep {
   dailyLogId String         @map("daily_log_id")
   approverId String         @map("approver_id")
   position   Int
+  submissionNumber Int            @default(1) @map("submission_number")
   status     ApprovalStatus @default(PENDING)
   color      WorkColor?
   comment    String?        @db.Text
@@ -195,7 +196,7 @@ model ApprovalStep {
   dailyLog   DailyLog       @relation(fields: [dailyLogId], references: [id], onDelete: Cascade)
   approver   User           @relation("ApprovalActor", fields: [approverId], references: [id], onDelete: Restrict)
 
-  @@unique([dailyLogId, position])
+  @@unique([dailyLogId, submissionNumber, position])
   @@index([approverId, status])
   @@map("approval_steps")
 }

@@ -7,7 +7,7 @@ import { InMemoryAdministrationRepository } from "./in-memory-administration-rep
 import { InMemoryAuthRepository } from "./in-memory-auth-repository.js";
 import { InMemoryLogRepository } from "./in-memory-log-repository.js";
 
-const logTestEnv = loadEnv({
+export const logTestEnv = loadEnv({
   NODE_ENV: "test",
   DATABASE_URL: "postgresql://worklog:secret@localhost:5432/worklog",
   SESSION_SECRET: "a-secure-session-secret-with-32-characters"

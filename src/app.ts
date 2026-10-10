@@ -5,6 +5,12 @@ import type { AppEnv } from "./config/env.js";
 import { PrismaAuthRepository, type AuthRepository } from "./modules/auth/auth.repository.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { AuthService } from "./modules/auth/auth.service.js";
+import {
+  ApprovalService,
+  PrismaApprovalRepository,
+  type ApprovalRepository
+} from "./modules/approvals/approval.service.js";
+import { approvalRoutes } from "./modules/approvals/approval.routes.js";
 import { PrismaLogRepository, type LogRepository } from "./modules/logs/log.repository.js";
 import { logRoutes } from "./modules/logs/log.routes.js";
 import { LogService } from "./modules/logs/log.service.js";
@@ -26,22 +32,25 @@ export interface BuildAppOptions {
   authRepository?: AuthRepository;
   administrationRepository?: AdministrationRepository;
   logRepository?: LogRepository;
+  approvalRepository?: ApprovalRepository;
 }
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.env.NODE_ENV !== "test" });
-  const database = options.authRepository && options.administrationRepository && options.logRepository
+  const database = options.authRepository && options.administrationRepository && options.logRepository && options.approvalRepository
     ? null
     : createDatabase(options.env);
   const authRepository = options.authRepository ?? new PrismaAuthRepository(database!);
   const administrationRepository = options.administrationRepository
     ?? new PrismaAdministrationRepository(database!);
   const logRepository = options.logRepository ?? new PrismaLogRepository(database!);
+  const approvalRepository = options.approvalRepository ?? new PrismaApprovalRepository(database!);
   const authService = new AuthService(authRepository);
   const userService = new UserService(administrationRepository);
   const approverService = new ApproverService(administrationRepository);
   const settingService = new SettingService(administrationRepository);
   const logService = new LogService(logRepository, approverService);
+  const approvalService = new ApprovalService(approvalRepository);
 
   if (database) {
     app.addHook("onClose", async () => database.$disconnect());
@@ -54,6 +63,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(userRoutes, { userService, approverService, authService });
   await app.register(settingRoutes, { settingService, authService });
   await app.register(logRoutes, { logService, authService });
+  await app.register(approvalRoutes, { approvalService, authService });
 
   app.get("/api/health", async () => ({ status: "ok" as const }));
 

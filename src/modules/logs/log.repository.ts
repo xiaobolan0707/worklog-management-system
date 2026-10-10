@@ -159,7 +159,8 @@ export class PrismaLogRepository implements LogRepository {
         data: approvers.map((assignment) => ({
           dailyLogId: logId,
           approverId: assignment.approverId,
-          position: assignment.position
+          position: assignment.position,
+          submissionNumber: log.submissionCount + 1
         }))
       });
       await appendAudit(transaction, {
