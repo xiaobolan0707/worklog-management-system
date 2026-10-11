@@ -16,6 +16,12 @@ export interface ApprovalLogRecord {
   status: string;
   color: "GREEN" | "RED" | "GRAY" | null;
   version: number;
+  items: {
+    position: number;
+    content: string;
+    completed: boolean;
+    unfinishedReason: string | null;
+  }[];
   approvalSteps: ApprovalStepRecord[];
 }
 
@@ -138,7 +144,10 @@ export class PrismaApprovalRepository implements ApprovalRepository {
   async findApprovalLog(logId: string) {
     const log = await this.database.dailyLog.findUnique({
       where: { id: logId },
-      include: { approvalSteps: { orderBy: { position: "asc" } } }
+      include: {
+        items: { orderBy: { position: "asc" } },
+        approvalSteps: { orderBy: { position: "asc" } }
+      }
     });
     if (!log) return null;
     const steps = log.approvalSteps.filter((step) => step.submissionNumber === log.submissionCount);
@@ -149,6 +158,12 @@ export class PrismaApprovalRepository implements ApprovalRepository {
       status: log.status,
       color: log.color,
       version: log.version,
+      items: log.items.map((item) => ({
+        position: item.position,
+        content: item.content,
+        completed: item.completed,
+        unfinishedReason: item.unfinishedReason
+      })),
       approvalSteps: steps.map((step) => ({
         approverId: step.approverId,
         position: step.position,

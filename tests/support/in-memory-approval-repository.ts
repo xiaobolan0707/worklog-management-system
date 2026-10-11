@@ -13,6 +13,7 @@ export class InMemoryApprovalRepository implements ApprovalRepository {
     employeeId: string;
     workDate: string;
     approverIds: string[];
+    items?: ApprovalLogRecord["items"];
   }) {
     this.logs.set(input.id, {
       id: input.id,
@@ -21,6 +22,7 @@ export class InMemoryApprovalRepository implements ApprovalRepository {
       status: "SUBMITTED",
       color: "GREEN",
       version: 1,
+      items: input.items ?? [],
       approvalSteps: input.approverIds.map((approverId, index) => ({
         approverId,
         position: index + 1,

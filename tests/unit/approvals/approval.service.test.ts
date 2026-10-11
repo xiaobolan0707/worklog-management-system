@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { ApprovalService } from "../../../src/modules/approvals/approval.service.js";
+import {
+  ApprovalService,
+  PrismaApprovalRepository
+} from "../../../src/modules/approvals/approval.service.js";
 import { InMemoryApprovalRepository } from "../../support/in-memory-approval-repository.js";
 
 function setup(workDate = "2026-10-10", now = "2026-10-10T04:00:00.000Z") {
@@ -18,6 +21,52 @@ function setup(workDate = "2026-10-10", now = "2026-10-10T04:00:00.000Z") {
 }
 
 describe("ApprovalService", () => {
+  it("returns submitted work items for the leader review queue", async () => {
+    const database = {
+      dailyLog: {
+        findUnique: async () => ({
+          id: "log-1",
+          employeeId: "employee-1",
+          workDate: new Date("2026-10-10T00:00:00.000Z"),
+          status: "SUBMITTED",
+          color: "GREEN",
+          submissionCount: 1,
+          version: 1,
+          items: [
+            {
+              position: 1,
+              content: "完成登录接口",
+              completed: true,
+              unfinishedReason: null
+            }
+          ],
+          approvalSteps: [
+            {
+              approverId: "leader-1",
+              position: 1,
+              submissionNumber: 1,
+              status: "PENDING",
+              color: null,
+              comment: null
+            }
+          ]
+        })
+      }
+    };
+    const repository = new PrismaApprovalRepository(database as never);
+
+    await expect(repository.findApprovalLog("log-1")).resolves.toMatchObject({
+      items: [
+        {
+          position: 1,
+          content: "完成登录接口",
+          completed: true,
+          unfinishedReason: null
+        }
+      ]
+    });
+  });
+
   it("enforces approval order and archives after the final red/gray decision", async () => {
     const { repository, service } = setup();
     await expect(service.approveCurrentStep("log-1", "leader-2", "RED", "完成")).rejects.toMatchObject({
