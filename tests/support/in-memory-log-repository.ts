@@ -23,6 +23,7 @@ export class InMemoryLogRepository implements LogRepository {
     const log: DailyLogRecord = {
       id: `log-${this.logs.size + 1}`,
       employeeId,
+      employeeName: employeeId,
       workDate: input.workDate,
       status: "DRAFT",
       color: null,

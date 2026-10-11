@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApprovalPage } from "../../../src/web/pages/leader/ApprovalPage.js";
+import { LogSearchPage } from "../../../src/web/pages/leader/LogSearchPage.js";
 import { ApproversPage } from "../../../src/web/pages/admin/ApproversPage.js";
 import { SettingsPage } from "../../../src/web/pages/admin/SettingsPage.js";
 
@@ -19,6 +20,15 @@ describe("leader and administrator pages",()=>{
     expect(screen.queryByText("employee-1")).not.toBeInTheDocument();
     expect(screen.getByText("当天或次日核查，只选择红色完成或灰色未完成。")).toBeInTheDocument();
     expect(screen.queryByText(/score|分数|评分/i)).not.toBeInTheDocument();
+  });
+
+  it("shows employee names instead of internal ids in log search",async()=>{
+    vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({logs:[
+      {id:"log-1",employeeId:"employee-1",employeeName:"张三",workDate:"2026-10-11",status:"ARCHIVED",color:"RED"}
+    ]}),{status:200}));
+    render(<LogSearchPage/>);
+    expect(await screen.findByText("张三")).toBeInTheDocument();
+    expect(screen.queryByText("employee-1")).not.toBeInTheDocument();
   });
 
   it("keeps approvers in the configured order",async()=>{

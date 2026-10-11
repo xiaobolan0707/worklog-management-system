@@ -12,6 +12,7 @@ export interface LogDraftInput {
 export interface DailyLogRecord {
   id: string;
   employeeId: string;
+  employeeName: string;
   workDate: string;
   status: LogStatusValue;
   color: LogColorValue | null;
@@ -39,6 +40,7 @@ export interface LogRepository {
 }
 
 const includeLog = {
+  employee: { select: { displayName: true, username: true } },
   items: { orderBy: { position: "asc" as const } },
   approvalSteps: { orderBy: { position: "asc" as const } },
   versions: { orderBy: { versionNumber: "asc" as const } }
@@ -53,6 +55,7 @@ function toRecord(log: Awaited<ReturnType<PrismaLogRepository["load"]>>): DailyL
   return {
     id: log.id,
     employeeId: log.employeeId,
+    employeeName: log.employee.displayName ?? log.employee.username,
     workDate: formatDate(log.workDate),
     status: log.status,
     color: log.color,
