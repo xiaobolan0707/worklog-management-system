@@ -25,7 +25,7 @@ curl --fail http://127.0.0.1/health
 docker compose run --rm \
   -e ADMIN_USERNAME='admin' \
   -e ADMIN_INITIAL_PASSWORD='请在终端中填写一次性强密码' \
-  app pnpm prisma:seed
+  app node --import tsx prisma/seed.ts
 ```
 
 管理员首次登录必须修改初始密码，随后在系统内创建部门、员工账号和审批关系。

@@ -54,7 +54,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-    networks: [backend]
+    networks: [backend, edge]
 
   backup:
     image: postgres:17-alpine
@@ -80,6 +80,7 @@ services:
 networks:
   backend:
     internal: true
+  edge:
 
 volumes:
   postgres-data:
