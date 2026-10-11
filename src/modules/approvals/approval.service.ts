@@ -12,6 +12,7 @@ export interface ApprovalStepRecord {
 export interface ApprovalLogRecord {
   id: string;
   employeeId: string;
+  employeeName: string;
   workDate: string;
   status: string;
   color: "GREEN" | "RED" | "GRAY" | null;
@@ -145,6 +146,7 @@ export class PrismaApprovalRepository implements ApprovalRepository {
     const log = await this.database.dailyLog.findUnique({
       where: { id: logId },
       include: {
+        employee: { select: { displayName: true, username: true } },
         items: { orderBy: { position: "asc" } },
         approvalSteps: { orderBy: { position: "asc" } }
       }
@@ -154,6 +156,7 @@ export class PrismaApprovalRepository implements ApprovalRepository {
     return {
       id: log.id,
       employeeId: log.employeeId,
+      employeeName: log.employee.displayName ?? log.employee.username,
       workDate: dateText(log.workDate),
       status: log.status,
       color: log.color,

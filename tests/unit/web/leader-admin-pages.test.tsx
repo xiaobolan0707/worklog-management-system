@@ -11,10 +11,12 @@ afterEach(()=>{cleanup();vi.restoreAllMocks();});
 
 describe("leader and administrator pages",()=>{
   it("offers only red or gray approval and never renders a score",async()=>{
-    vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({logs:[{id:"log-1",employeeId:"employee-1",workDate:"2026-10-10",items:[{position:1,content:"完成接口"}]}]}),{status:200}));
+    vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({logs:[{id:"log-1",employeeId:"employee-1",employeeName:"张三",workDate:"2026-10-10",items:[{position:1,content:"完成接口"}]}]}),{status:200}));
     render(<ApprovalPage/>);
     expect(await screen.findByRole("radio",{name:"红色：已完成"})).toBeInTheDocument();
     expect(screen.getByRole("radio",{name:"灰色：未完成"})).toBeInTheDocument();
+    expect(screen.getByText("张三")).toBeInTheDocument();
+    expect(screen.queryByText("employee-1")).not.toBeInTheDocument();
     expect(screen.getByText("当天或次日核查，只选择红色完成或灰色未完成。")).toBeInTheDocument();
     expect(screen.queryByText(/score|分数|评分/i)).not.toBeInTheDocument();
   });

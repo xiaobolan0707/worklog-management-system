@@ -32,6 +32,7 @@ describe("ApprovalService", () => {
           color: "GREEN",
           submissionCount: 1,
           version: 1,
+          employee: { displayName: "张三", username: "zhangsan" },
           items: [
             {
               position: 1,
@@ -56,6 +57,7 @@ describe("ApprovalService", () => {
     const repository = new PrismaApprovalRepository(database as never);
 
     await expect(repository.findApprovalLog("log-1")).resolves.toMatchObject({
+      employeeName: "张三",
       items: [
         {
           position: 1,

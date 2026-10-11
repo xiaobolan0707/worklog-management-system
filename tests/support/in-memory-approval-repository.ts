@@ -11,6 +11,7 @@ export class InMemoryApprovalRepository implements ApprovalRepository {
   addSubmittedLog(input: {
     id: string;
     employeeId: string;
+    employeeName?: string;
     workDate: string;
     approverIds: string[];
     items?: ApprovalLogRecord["items"];
@@ -18,6 +19,7 @@ export class InMemoryApprovalRepository implements ApprovalRepository {
     this.logs.set(input.id, {
       id: input.id,
       employeeId: input.employeeId,
+      employeeName: input.employeeName ?? input.employeeId,
       workDate: input.workDate,
       status: "SUBMITTED",
       color: "GREEN",
