@@ -15,6 +15,7 @@ describe("leader and administrator pages",()=>{
     render(<ApprovalPage/>);
     expect(await screen.findByRole("radio",{name:"红色：已完成"})).toBeInTheDocument();
     expect(screen.getByRole("radio",{name:"灰色：未完成"})).toBeInTheDocument();
+    expect(screen.getByText("当天或次日核查，只选择红色完成或灰色未完成。")).toBeInTheDocument();
     expect(screen.queryByText(/score|分数|评分/i)).not.toBeInTheDocument();
   });
 

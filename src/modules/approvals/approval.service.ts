@@ -51,6 +51,12 @@ function beijingDate(date: Date): string {
   return `${value["year"]}-${value["month"]}-${value["day"]}`;
 }
 
+function calendarDayDifference(fromDate: string, toDate: string): number {
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  return (Date.parse(`${toDate}T00:00:00.000Z`) - Date.parse(`${fromDate}T00:00:00.000Z`)) /
+    millisecondsPerDay;
+}
+
 export class ApprovalService {
   constructor(
     private readonly repository: ApprovalRepository,
@@ -64,8 +70,9 @@ export class ApprovalService {
     if (!current || current.approverId !== leaderId) {
       throw new ApprovalError(403, "NOT_CURRENT_APPROVER", "尚未轮到您审批此日志");
     }
-    if (log.workDate !== beijingDate(this.now())) {
-      throw new ApprovalError(409, "APPROVAL_DATE_EXPIRED", "该日志已超过当日审批时间");
+    const reviewDayOffset = calendarDayDifference(log.workDate, beijingDate(this.now()));
+    if (reviewDayOffset < 0 || reviewDayOffset > 1) {
+      throw new ApprovalError(409, "APPROVAL_DATE_EXPIRED", "核查时间仅限日志当天或次日");
     }
     return log;
   }

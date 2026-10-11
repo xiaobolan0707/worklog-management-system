@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ApprovalService } from "../../../src/modules/approvals/approval.service.js";
 import { InMemoryApprovalRepository } from "../../support/in-memory-approval-repository.js";
 
-function setup(workDate = "2026-10-10") {
+function setup(workDate = "2026-10-10", now = "2026-10-10T04:00:00.000Z") {
   const repository = new InMemoryApprovalRepository();
   repository.addSubmittedLog({
     id: "log-1",
@@ -13,7 +13,7 @@ function setup(workDate = "2026-10-10") {
   });
   return {
     repository,
-    service: new ApprovalService(repository, () => new Date("2026-10-10T04:00:00.000Z"))
+    service: new ApprovalService(repository, () => new Date(now))
   };
 }
 
@@ -33,13 +33,18 @@ describe("ApprovalService", () => {
     expect(repository.audits.filter((event) => event.action === "LOG_APPROVED")).toHaveLength(2);
   });
 
-  it("rejects non-red/gray decisions and approval after the work date", async () => {
+  it("allows review on the work date or following day and rejects later review", async () => {
     const current = setup();
     await expect(
       current.service.approveCurrentStep("log-1", "leader-1", "GREEN" as "RED", "x")
     ).rejects.toMatchObject({ code: "INVALID_COLOR" });
 
-    const late = setup("2026-10-09");
+    const followingDay = setup("2026-10-10", "2026-10-11T04:00:00.000Z");
+    await expect(
+      followingDay.service.approveCurrentStep("log-1", "leader-1", "RED", "次日核查完成")
+    ).resolves.toMatchObject({ color: "RED" });
+
+    const late = setup("2026-10-09", "2026-10-11T04:00:00.000Z");
     await expect(
       late.service.approveCurrentStep("log-1", "leader-1", "RED", "x")
     ).rejects.toMatchObject({ code: "APPROVAL_DATE_EXPIRED" });
