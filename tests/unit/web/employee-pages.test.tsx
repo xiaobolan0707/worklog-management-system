@@ -93,6 +93,47 @@ describe("employee worklog pages", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
   });
 
+  it("starts a fresh editable log when the latest log belongs to a previous day", async () => {
+    const previousLog = {
+      id: "log-yesterday",
+      employeeName: "张三",
+      workDate: "2026-10-11",
+      status: "SUBMITTED",
+      color: "GREEN",
+      items: [1, 2, 3, 4].map((position) => ({ position, content: `昨日工作 ${position}`, completed: true, images: [] }))
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/auth/me")) return new Response(JSON.stringify({ user: { id: "employee-1", username: "zhangsan", displayName: "张三", role: "EMPLOYEE", mustChangePassword: false } }), { status: 200 });
+      if (url.endsWith("/api/logs/mine")) return new Response(JSON.stringify({ logs: [previousLog] }), { status: 200 });
+      return new Response(null, { status: 404 });
+    });
+
+    render(<AuthProvider><TodayLogPage /></AuthProvider>);
+
+    expect(await screen.findByRole("button", { name: "提交日志" })).toBeInTheDocument();
+    expect(screen.getByLabelText("工作内容 1")).toHaveValue("");
+    expect(screen.queryByText("昨日工作 1")).not.toBeInTheDocument();
+  });
+
+  it("does not reuse an undated browser draft on a later day", async () => {
+    localStorage.setItem("worklog:today-draft", JSON.stringify([
+      { content: "昨日未提交草稿", completed: true, images: [] },
+      ...emptyItems().slice(1)
+    ]));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/auth/me")) return new Response(JSON.stringify({ user: { id: "employee-1", username: "zhangsan", displayName: "张三", role: "EMPLOYEE", mustChangePassword: false } }), { status: 200 });
+      if (url.endsWith("/api/logs/mine")) return new Response(JSON.stringify({ logs: [] }), { status: 200 });
+      return new Response(null, { status: 404 });
+    });
+
+    render(<AuthProvider><TodayLogPage /></AuthProvider>);
+
+    await screen.findByText("员工姓名：张三");
+    expect(screen.getByLabelText("工作内容 1")).toHaveValue("");
+  });
+
   it("shows approval comments and progress without any score", () => {
     render(<ApprovalProgress steps={[
       { approverId: "leader-1", approverName: "李经理", approverRole: "LEADER", position: 1, status: "APPROVED", color: "RED", comment: null, itemComments: [{ itemPosition: 1, comment: "已完成" }], actedAt: "2026-10-12T02:00:00.000Z" },

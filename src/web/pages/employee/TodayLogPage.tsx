@@ -14,7 +14,6 @@ interface LogView {
   items: EditableWorkItem[];
 }
 
-const storageKey = "worklog:today-draft";
 const emptyItem = (): EditableWorkItem => ({ content: "", completed: true, images: [] });
 
 function withFourItems(items: EditableWorkItem[]) {
@@ -25,10 +24,14 @@ function todayInBeijing() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
 }
 
+function storageKey() {
+  return `worklog:today-draft:${todayInBeijing()}`;
+}
+
 export function TodayLogPage() {
   const { user } = useAuth();
   const [items, setItems] = useState<EditableWorkItem[]>(() => {
-    try { return withFourItems(JSON.parse(localStorage.getItem(storageKey) ?? "null") ?? []); }
+    try { return withFourItems(JSON.parse(localStorage.getItem(storageKey()) ?? "null") ?? []); }
     catch { return withFourItems([]); }
   });
   const [log, setLog] = useState<LogView | null>(null);
@@ -37,12 +40,12 @@ export function TodayLogPage() {
 
   useEffect(() => {
     void apiRequest<{ logs: LogView[] }>("/logs/mine").then(({ logs }) => {
-      const current = logs[0];
+      const current = logs.find((candidate) => candidate.workDate === todayInBeijing());
       if (current) { setLog(current); setItems(withFourItems(current.items)); }
     });
   }, []);
   useEffect(() => {
-    if (!log || ["DRAFT", "RETURNED"].includes(log.status)) localStorage.setItem(storageKey, JSON.stringify(items));
+    if (!log || ["DRAFT", "RETURNED"].includes(log.status)) localStorage.setItem(storageKey(), JSON.stringify(items));
   }, [items, log]);
 
   function validateForSubmit() {
@@ -71,7 +74,7 @@ export function TodayLogPage() {
     const result = await apiRequest<{ log: LogView }>(`/logs/${draft.id}/submit`, { method: "POST" });
     setLog(result.log);
     setNotice("日志已提交，等待领导核查");
-    localStorage.removeItem(storageKey);
+    localStorage.removeItem(storageKey());
   }
 
   const locked = Boolean(log && !["DRAFT", "RETURNED"].includes(log.status));
