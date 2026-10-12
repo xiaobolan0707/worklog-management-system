@@ -30,4 +30,12 @@ pnpm verify
 
 按照 [Linux 部署说明](docs/operations/deploy-linux.md) 配置服务器；备份与恢复参见 [备份恢复说明](docs/operations/backup-restore.md)。初始 HTTP 只用于安装验收，真实员工密码投入使用前必须绑定域名并启用 HTTPS。
 
+Windows 本机已安装并配置 Workbench CLI 时，可将 `scripts/deploy-one-click.ps1` 与升级包放在同一目录后执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy-one-click.ps1
+```
+
+脚本会依次校验升级包、上传、备份数据库和程序、构建容器、执行迁移并检查健康状态。先运行 `-ValidateOnly` 可只做本地校验，不连接或修改服务器。
+
 从旧版本升级时，启动应用前必须保留数据库备份。应用启动执行 `prisma migrate deploy` 后，会为日志事项增加图片字段、为审批步骤增加逐项批注字段；迁移不删除旧日志和旧批注。

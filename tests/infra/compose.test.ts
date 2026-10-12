@@ -37,4 +37,10 @@ describe("production compose stack", () => {
     expect(dockerfile).toMatch(/^HEALTHCHECK /m);
     expect(dockerfile).toContain("/app/src ./src");
   });
+
+  it("allows the validated image payload through the Nginx edge", async () => {
+    const nginx = await readFile(resolve(root, "infra/nginx/default.conf"), "utf8");
+
+    expect(nginx).toMatch(/client_max_body_size\s+70m;/);
+  });
 });
