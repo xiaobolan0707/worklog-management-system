@@ -36,4 +36,4 @@ docker compose run --rm \
 
 ## 4. 更新与回退
 
-更新前先做人工备份并记录当前 Git 提交；再拉取指定版本，执行 `docker compose build` 和 `docker compose up -d`。数据库迁移只前进；若更新失败，保留数据库和备份卷，回到上一应用提交后重新构建，不得删除数据卷。
+更新前先做人工备份并记录当前 Git 提交；再拉取指定版本，执行 `docker compose build` 和 `docker compose up -d`。本次信纸与逐项批注升级会自动执行 `20261012090000_letter_log_comments` 迁移，为日志事项和审批步骤增加 JSONB 字段，不改写旧数据。数据库迁移只前进；若更新失败，保留数据库和备份卷，回到上一应用提交后重新构建，不得删除数据卷。
