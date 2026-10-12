@@ -56,7 +56,6 @@ export function LetterLog({
               {renderItem ? renderItem(item, index) : (
                 <div className="letter-readonly-item">
                   <p>{item.content}</p>
-                  {!item.completed && <small>未完成：{item.unfinishedReason}</small>}
                   <LetterImages images={item.images} />
                 </div>
               )}

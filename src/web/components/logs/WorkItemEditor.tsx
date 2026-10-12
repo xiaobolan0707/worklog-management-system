@@ -79,10 +79,6 @@ export function WorkItemEditor({
         renderItem={(item, index) => (
           <div className="work-fields">
             <label className="field"><span>工作内容</span><textarea aria-label={`工作内容 ${index + 1}`} value={item.content} disabled={disabled} onChange={(event) => update(index, { content: event.target.value })} /></label>
-            <div className="row-fields">
-              <label className="field"><span>完成情况</span><select aria-label={`完成状态 ${index + 1}`} value={String(item.completed)} disabled={disabled} onChange={(event) => update(index, { completed: event.target.value === "true", unfinishedReason: event.target.value === "true" ? "" : item.unfinishedReason ?? undefined })}><option value="true">已完成</option><option value="false">未完成</option></select></label>
-              {!item.completed && <label className="field"><span>未完成原因</span><input aria-label={`未完成原因 ${index + 1}`} value={item.unfinishedReason ?? ""} disabled={disabled} onChange={(event) => update(index, { unfinishedReason: event.target.value })} /></label>}
-            </div>
             <LetterImages images={item.images} />
             {!disabled && <label className="image-upload"><span>＋ 插入图片</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label={`上传图片 ${index + 1}`} onChange={(event) => addImages(index, event.target.files)} /></label>}
             {!disabled && item.images?.map((image, imageIndex) => <div className="image-actions" key={image.id}>

@@ -17,7 +17,7 @@ interface LogView {
 const emptyItem = (): EditableWorkItem => ({ content: "", completed: true, images: [] });
 
 function withFourItems(items: EditableWorkItem[]) {
-  return [...items.map((item) => ({ ...item, images: item.images ?? [] })), ...Array.from({ length: Math.max(0, 4 - items.length) }, emptyItem)];
+  return [...items.map((item) => ({ ...item, completed: true, unfinishedReason: undefined, images: item.images ?? [] })), ...Array.from({ length: Math.max(0, 4 - items.length) }, emptyItem)];
 }
 
 function todayInBeijing() {
@@ -51,7 +51,6 @@ export function TodayLogPage() {
   function validateForSubmit() {
     const emptyIndex = items.findIndex((item) => !item.content.trim() && item.images.length === 0);
     if (items.length < 4 || emptyIndex >= 0) return `请填写第 ${Math.max(0, emptyIndex) + 1} 项工作内容或图片`;
-    if (items.some((item) => !item.completed && !item.unfinishedReason?.trim())) return "请填写未完成原因";
     return "";
   }
 
@@ -80,7 +79,7 @@ export function TodayLogPage() {
   const locked = Boolean(log && !["DRAFT", "RETURNED"].includes(log.status));
   return (
     <main className="page">
-      <div className="page-head"><div><p className="eyebrow">TODAY · {todayInBeijing()}</p><h1>今日工作日志</h1><p>按 1、2、3… 逐项填写当天工作，提交后显示绿色。</p></div>{log && <StatusBadge color={log.color} />}</div>
+      <div className="page-head"><div><p className="eyebrow">TODAY · {todayInBeijing()}</p><h1>今日工作日志</h1><p>按 1、2、3… 逐项填写当天工作，完成情况由领导核查。</p></div>{log && <StatusBadge color={log.color} />}</div>
       {notice && <p className="notice success">{notice}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
       <section className="panel form-panel">

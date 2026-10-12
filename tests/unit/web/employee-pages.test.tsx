@@ -27,6 +27,8 @@ describe("employee worklog pages", () => {
     render(<WorkItemEditor items={emptyItems()} onChange={onChange} employeeName="张三" workDate="2026-10-12" />);
     expect(screen.getAllByLabelText(/工作内容/)).toHaveLength(4);
     expect(screen.queryByRole("button", { name: /删除工作项/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("完成情况")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/完成状态/)).not.toBeInTheDocument();
     expect(screen.getByText("员工姓名：张三")).toBeInTheDocument();
     expect(screen.getByText("日志日期：2026-10-12")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /添加工作项/ }));
@@ -59,9 +61,9 @@ describe("employee worklog pages", () => {
     expect(onChange.mock.calls.at(-1)?.[0][0].images.map((image: { name: string }) => image.name)).toEqual(["B.png", "A.png"]);
   });
 
-  it("requires unfinished reasons and submits a persisted green log", async () => {
+  it("submits four employee work items without employee completion fields", async () => {
     const draftItems = [
-      { content: "进行项目联调", completed: false, unfinishedReason: "等待测试环境", images: [] },
+      { content: "进行项目联调", completed: true, images: [] },
       { content: "整理数据", completed: true, images: [] },
       { content: "更新文档", completed: true, images: [] },
       { content: "检查部署", completed: true, images: [] }
@@ -79,15 +81,11 @@ describe("employee worklog pages", () => {
     await screen.findByRole("heading", { name: "今日工作日志" });
     expect(await screen.findByText("员工姓名：张三")).toBeInTheDocument();
     await user.type(screen.getByLabelText("工作内容 1"), "进行项目联调");
-    await user.selectOptions(screen.getByLabelText("完成状态 1"), "false");
     await user.click(screen.getByRole("button", { name: "提交日志" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("请填写第 2 项工作内容或图片");
     await user.type(screen.getByLabelText("工作内容 2"), "整理数据");
     await user.type(screen.getByLabelText("工作内容 3"), "更新文档");
     await user.type(screen.getByLabelText("工作内容 4"), "检查部署");
-    await user.click(screen.getByRole("button", { name: "提交日志" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("请填写未完成原因");
-    await user.type(screen.getByLabelText("未完成原因 1"), "等待测试环境");
     await user.click(screen.getByRole("button", { name: "提交日志" }));
     expect(await screen.findByText("已提交")).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
@@ -151,7 +149,7 @@ describe("employee worklog pages", () => {
       workDate: "2026-10-12",
       status: "IN_REVIEW",
       color: "RED",
-      items: [1, 2, 3, 4].map((position) => ({ position, content: `工作事项 ${position}`, completed: true, images: [] })),
+      items: [1, 2, 3, 4].map((position) => ({ position, content: `工作事项 ${position}`, completed: position !== 1, unfinishedReason: position === 1 ? "员工旧状态" : undefined, images: [] })),
       approvalSteps: [{
         approverId: "leader-1",
         approverName: "李经理",
@@ -174,6 +172,7 @@ describe("employee worklog pages", () => {
     expect(await within(itemOneComments).findByText("批注 1")).toBeInTheDocument();
     expect(within(itemOneComments).queryByText("批注 2")).not.toBeInTheDocument();
     expect(within(itemOneComments).getByText(/李经理/)).toBeInTheDocument();
+    expect(screen.queryByText("未完成：员工旧状态")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
