@@ -10,6 +10,7 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
   readonly users = new Map<string, AdminUserRecord>();
   readonly departments = new Map<string, { id: string; name: string }>();
   readonly approvers = new Map<string, ApproverAssignmentInput[]>();
+  readonly protectedUsers = new Set<string>();
   settings: ScheduleSettings = {
     submissionDeadline: "18:00",
     reminderMinutesBefore: 30,
@@ -40,6 +41,22 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
   async createUser(input: Omit<AdminUserRecord, "id">) {
     const user = { id: `user-${this.users.size + 1}`, ...input };
     this.users.set(user.id, user);
+    return user;
+  }
+
+  async deleteUser(_actorId: string, userId: string) {
+    const user = this.users.get(userId);
+    if (!user) return null;
+    if (this.protectedUsers.has(userId)) return "HAS_HISTORY" as const;
+    this.users.delete(userId);
+    this.authRepository?.users.delete(userId);
+    this.approvers.delete(userId);
+    for (const [employeeId, assignments] of this.approvers) {
+      this.approvers.set(employeeId, assignments.filter((item) => item.approverId !== userId));
+    }
+    for (const [tokenHash, session] of this.authRepository?.sessions ?? []) {
+      if (session.userId === userId) this.authRepository?.sessions.delete(tokenHash);
+    }
     return user;
   }
 

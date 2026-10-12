@@ -136,6 +136,29 @@ describe("administrator organization routes", () => {
     expect(response.json().code).toBe("FORBIDDEN");
   });
 
+  it("deletes an unused account as an administrator", async () => {
+    const app = await createApp();
+    const auth = await credentials(app, "admin", "Admin-password-42");
+    const target = await administrationRepository.createUser({
+      username: "unused",
+      displayName: "待删除用户",
+      passwordHash: "hidden",
+      role: "EMPLOYEE",
+      accountStatus: "ACTIVE",
+      departmentId: null,
+      mustChangePassword: true
+    });
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/api/admin/users/${target.id}`,
+      headers: { cookie: auth.cookie, "x-csrf-token": auth.csrfToken }
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(administrationRepository.users.has(target.id)).toBe(false);
+  });
+
   it("validates worklog deadline and reminder settings", async () => {
     const app = await createApp();
     const auth = await credentials(app, "admin", "Admin-password-42");

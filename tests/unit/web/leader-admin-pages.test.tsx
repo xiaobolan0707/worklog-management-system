@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApprovalPage } from "../../../src/web/pages/leader/ApprovalPage.js";
 import { LogSearchPage } from "../../../src/web/pages/leader/LogSearchPage.js";
 import { ApproversPage } from "../../../src/web/pages/admin/ApproversPage.js";
 import { SettingsPage } from "../../../src/web/pages/admin/SettingsPage.js";
+import { UsersPage } from "../../../src/web/pages/admin/UsersPage.js";
 
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 
@@ -55,5 +56,30 @@ describe("leader and administrator pages",()=>{
     await user.type(screen.getByLabelText("日志截止时间"),"25:90");
     await user.click(screen.getByRole("button",{name:"保存设置"}));
     expect(await screen.findByRole("alert")).toHaveTextContent("时间格式");
+  });
+
+  it("confirms and deletes an unused user from user management",async()=>{
+    let users=[{id:"user-1",username:"unused",displayName:"待删除用户",role:"EMPLOYEE",accountStatus:"ACTIVE"}];
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(input,init)=>{
+      const url=String(input);
+      if(url.endsWith("/api/admin/departments"))return new Response(JSON.stringify({departments:[]}),{status:200});
+      if(url.endsWith("/api/admin/users/user-1")&&init?.method==="DELETE"){
+        users=[];
+        return new Response(null,{status:204});
+      }
+      if(url.endsWith("/api/admin/users"))return new Response(JSON.stringify({users}),{status:200});
+      return new Response(null,{status:404});
+    });
+    vi.spyOn(window,"confirm").mockReturnValue(true);
+    const user=userEvent.setup();
+
+    render(<UsersPage/>);
+    await user.click(await screen.findByRole("button",{name:"删除待删除用户"}));
+
+    await waitFor(()=>expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/users/user-1",
+      expect.objectContaining({method:"DELETE"})
+    ));
+    expect(screen.queryByText("待删除用户")).not.toBeInTheDocument();
   });
 });

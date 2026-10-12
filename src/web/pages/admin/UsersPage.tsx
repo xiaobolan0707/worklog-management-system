@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 
-import { apiRequest } from "../../api/client.js";
+import { ApiError, apiRequest } from "../../api/client.js";
 
 interface AdminUser {
   id: string;
@@ -56,6 +56,19 @@ export function UsersPage() {
     await load();
   }
 
+  async function remove(user: AdminUser) {
+    const label = user.displayName || user.username;
+    if (!window.confirm(`确定删除用户“${label}”吗？此操作不可撤销。`)) return;
+    try {
+      await apiRequest(`/admin/users/${user.id}`, { method: "DELETE" });
+      if (resetUserId === user.id) setResetUserId("");
+      setNotice(`用户“${label}”已删除`);
+      await load();
+    } catch (error) {
+      setNotice(error instanceof ApiError ? error.message : "删除失败，请稍后重试");
+    }
+  }
+
   return <main className="page">
     <div className="page-head"><div><p className="eyebrow">ACCOUNT ADMIN</p><h1>用户管理</h1><p>由管理员创建账号和初始密码。</p></div></div>
     <div className="admin-grid">
@@ -63,6 +76,6 @@ export function UsersPage() {
       <section className="panel"><h2>重置密码</h2><label className="field"><span>选择用户</span><select value={resetUserId} onChange={(event) => setResetUserId(event.target.value)}><option value="">请选择</option>{users.map((user) => <option key={user.id} value={user.id}>{user.displayName || user.username}（{user.username}）</option>)}</select></label><label className="field"><span>新初始密码</span><input value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} type="password" minLength={12} /></label><button className="btn secondary" disabled={!resetUserId || resetPassword.length < 12} onClick={() => void reset()}>重置密码</button></section>
     </div>
     {notice && <p className="notice">{notice}</p>}
-    <section className="panel table-wrap"><table><thead><tr><th>姓名</th><th>用户名</th><th>角色</th><th>状态</th><th>用户 ID</th><th>操作</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.displayName || "-"}</td><td>{user.username}</td><td>{user.role}</td><td>{user.accountStatus === "ACTIVE" ? "启用" : "停用"}</td><td><code>{user.id}</code></td><td><button className="btn secondary" onClick={() => void toggle(user)}>{user.accountStatus === "ACTIVE" ? "停用" : "启用"}</button></td></tr>)}</tbody></table></section>
+    <section className="panel table-wrap"><table><thead><tr><th>姓名</th><th>用户名</th><th>角色</th><th>状态</th><th>用户 ID</th><th>操作</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.displayName || "-"}</td><td>{user.username}</td><td>{user.role}</td><td>{user.accountStatus === "ACTIVE" ? "启用" : "停用"}</td><td><code>{user.id}</code></td><td><div className="form-actions"><button className="btn secondary" onClick={() => void toggle(user)}>{user.accountStatus === "ACTIVE" ? "停用" : "启用"}</button><button className="btn secondary" aria-label={`删除${user.displayName||user.username}`} onClick={() => void remove(user)}>删除</button></div></td></tr>)}</tbody></table></section>
   </main>;
 }

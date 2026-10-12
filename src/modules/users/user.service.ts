@@ -27,12 +27,15 @@ export interface ScheduleSettings {
   timezone: "Asia/Shanghai";
 }
 
+export type DeleteUserResult = AdminUserRecord | "HAS_HISTORY" | null;
+
 export interface AdministrationRepository {
   findUserByUsername(username: string): Promise<AdminUserRecord | null>;
   listUsers(): Promise<AdminUserRecord[]>;
   listDepartments(): Promise<{ id: string; name: string }[]>;
   createDepartment(name: string): Promise<{ id: string; name: string }>;
   createUser(input: Omit<AdminUserRecord, "id">): Promise<AdminUserRecord>;
+  deleteUser(actorId: string, userId: string): Promise<DeleteUserResult>;
   setUserStatus(userId: string, status: AuthAccountStatus): Promise<AdminUserRecord>;
   resetPassword(userId: string, passwordHash: string, revokedAt: Date): Promise<AdminUserRecord>;
   replaceApprovers(employeeId: string, assignments: ApproverAssignmentInput[]): Promise<void>;
@@ -113,6 +116,20 @@ export class UserService {
       metadata: { status }
     });
     return user;
+  }
+
+  async deleteUser(actorId: string, userId: string) {
+    if (actorId === userId) {
+      throw new AdministrationError(400, "CANNOT_DELETE_SELF", "不能删除当前登录的管理员账号");
+    }
+    const result = await this.repository.deleteUser(actorId, userId);
+    if (result === "HAS_HISTORY") {
+      throw new AdministrationError(409, "USER_HAS_HISTORY", "该账号已有业务记录，请改为停用");
+    }
+    if (!result) {
+      throw new AdministrationError(404, "USER_NOT_FOUND", "用户不存在");
+    }
+    return result;
   }
 
   async resetPassword(actorId: string, userId: string, initialPassword: string) {
@@ -201,6 +218,51 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
         departmentId: true,
         mustChangePassword: true
       }
+    });
+  }
+
+  async deleteUser(actorId: string, userId: string): Promise<DeleteUserResult> {
+    return this.database.$transaction(async (transaction) => {
+      const user = await transaction.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          passwordHash: true,
+          role: true,
+          accountStatus: true,
+          departmentId: true,
+          mustChangePassword: true,
+          _count: {
+            select: {
+              dailyLogs: true,
+              logVersions: true,
+              approvalSteps: true,
+              colorChanges: true,
+              rewardSubjects: true,
+              rewardDecisions: true
+            }
+          }
+        }
+      });
+      if (!user) return null;
+      const { _count, ...record } = user;
+      if (Object.values(_count).some((count) => count > 0)) return "HAS_HISTORY";
+
+      await transaction.employeeApprover.deleteMany({
+        where: { OR: [{ employeeId: userId }, { approverId: userId }] }
+      });
+      await writeAudit(transaction, {
+        actorId,
+        subjectUserId: userId,
+        action: "USER_DELETED",
+        entityType: "User",
+        entityId: userId,
+        metadata: { username: user.username, role: user.role }
+      });
+      await transaction.user.delete({ where: { id: userId } });
+      return record;
     });
   }
 

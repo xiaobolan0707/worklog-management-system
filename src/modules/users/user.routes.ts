@@ -68,6 +68,17 @@ export const userRoutes: FastifyPluginAsync<UserRoutesOptions> = async (app, opt
     }
   });
 
+  app.delete("/api/admin/users/:id", { preHandler: adminOnly }, async (request, reply) => {
+    try {
+      verifyCsrf(request, options.authService);
+      const { id } = idParams.parse(request.params);
+      await options.userService.deleteUser(request.authenticated!.user.id, id);
+      return reply.code(204).send();
+    } catch (error) {
+      return sendAdministrationError(reply, error);
+    }
+  });
+
   app.post("/api/admin/departments", { preHandler: adminOnly }, async (request, reply) => {
     try {
       verifyCsrf(request, options.authService);
