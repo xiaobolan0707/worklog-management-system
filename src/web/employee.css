@@ -12,3 +12,5 @@
 
 @media(max-width:900px){.letter-heading{grid-template-columns:1fr}.letter-heading span{display:none}.letter-row{grid-template-columns:1fr}.letter-comment-column{border-left:0;border-top:1px dashed #cbd6d0;min-height:90px}.letter-content{padding:15px}.letter-signature{padding:18px}}
 @media print{.sidebar,.topbar,.page-head,.form-actions,.add-item,.image-upload,.text-button{display:none!important}.app-shell,.app-main{display:block}.page{padding:0}.panel{box-shadow:none;border:0;padding:0}.letter-paper{box-shadow:none}.letter-row{break-inside:avoid}}
+
+.item-comment-thread{display:grid;gap:10px}.item-comment{padding:10px;border:1px solid #d6e1db;border-radius:9px;background:#fff}.item-comment strong{font-size:12px;color:var(--forest)}.item-comment p{margin:7px 0;white-space:pre-wrap;font-size:13px}.item-comment time{color:var(--muted);font-size:10px}.item-comment-input{margin-top:14px}.item-comment-input textarea{min-height:100px}.history-status{display:flex;justify-content:flex-end;margin-bottom:12px}.text-link{color:var(--forest-2);font-weight:700;text-decoration:none}.text-link:hover{text-decoration:underline}

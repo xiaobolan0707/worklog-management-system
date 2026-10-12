@@ -9,6 +9,7 @@ import { HistoryPage } from "./pages/employee/HistoryPage.js";
 import { TodayLogPage } from "./pages/employee/TodayLogPage.js";
 import { ApprovalPage } from "./pages/leader/ApprovalPage.js";
 import { LogSearchPage } from "./pages/leader/LogSearchPage.js";
+import { LogDetailPage } from "./pages/leader/LogDetailPage.js";
 import { DashboardPage } from "./pages/management/DashboardPage.js";
 import { RewardsPage } from "./pages/management/RewardsPage.js";
 import { UsersPage } from "./pages/admin/UsersPage.js";
@@ -42,7 +43,7 @@ export function AppRouter() {
         <Route path="/employee/today" element={<TodayLogPage />} />
         <Route path="/employee/history" element={<HistoryPage />} />
         <Route path="/employee/stats" element={<EmployeeStatsPage />} />
-        <Route path="/leader/approvals" element={<ApprovalPage/>}/><Route path="/leader/logs" element={<LogSearchPage/>}/><Route path="/reports/departments" element={<DashboardPage/>}/><Route path="/management" element={<DashboardPage/>}/><Route path="/management/rewards" element={<RewardsPage/>}/><Route path="/admin/users" element={<UsersPage/>}/><Route path="/admin/departments" element={<DepartmentsPage/>}/><Route path="/admin/approvers" element={<ApproversPage/>}/><Route path="/admin/settings" element={<SettingsPage/>}/><Route path="/admin/audit" element={<AuditPage/>}/>
+        <Route path="/leader/approvals" element={<ApprovalPage/>}/><Route path="/leader/logs" element={<LogSearchPage/>}/><Route path="/leader/logs/:id" element={<LogDetailPage/>}/><Route path="/reports/departments" element={<DashboardPage/>}/><Route path="/management" element={<DashboardPage/>}/><Route path="/management/rewards" element={<RewardsPage/>}/><Route path="/admin/users" element={<UsersPage/>}/><Route path="/admin/departments" element={<DepartmentsPage/>}/><Route path="/admin/approvers" element={<ApproversPage/>}/><Route path="/admin/settings" element={<SettingsPage/>}/><Route path="/admin/audit" element={<AuditPage/>}/>
       </Routes>
     </AppShell>
   );

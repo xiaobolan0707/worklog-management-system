@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { ApprovalPage } from "../../../src/web/pages/leader/ApprovalPage.js";
 import { LogSearchPage } from "../../../src/web/pages/leader/LogSearchPage.js";
 import { ApproversPage } from "../../../src/web/pages/admin/ApproversPage.js";
@@ -13,23 +14,34 @@ afterEach(()=>{cleanup();vi.restoreAllMocks();});
 
 describe("leader and administrator pages",()=>{
   it("offers only red or gray approval and never renders a score",async()=>{
-    vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({logs:[{id:"log-1",employeeId:"employee-1",employeeName:"张三",workDate:"2026-10-10",items:[{position:1,content:"完成接口"}]}]}),{status:200}));
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(input,init)=>{
+      if(init?.method==="POST")return new Response(JSON.stringify({log:{id:"log-1"}}),{status:200});
+      return new Response(JSON.stringify({logs:[{id:"log-1",employeeId:"employee-1",employeeName:"张三",workDate:"2026-10-10",items:[1,2,3,4].map(position=>({position,content:`工作事项 ${position}`,completed:true,images:[]})),approvalSteps:[]}]}),{status:200});
+    });
+    const user=userEvent.setup();
     render(<ApprovalPage/>);
     expect(await screen.findByRole("radio",{name:"红色：已完成"})).toBeInTheDocument();
     expect(screen.getByRole("radio",{name:"灰色：未完成"})).toBeInTheDocument();
-    expect(screen.getByText("张三")).toBeInTheDocument();
+    expect(screen.getByText("员工姓名：张三")).toBeInTheDocument();
     expect(screen.queryByText("employee-1")).not.toBeInTheDocument();
     expect(screen.getByText("当天或次日核查，只选择红色完成或灰色未完成。")).toBeInTheDocument();
     expect(screen.queryByText(/score|分数|评分/i)).not.toBeInTheDocument();
+    for(const position of [1,2,3,4])await user.type(screen.getByLabelText(`事项 ${position} 批注`),`事项 ${position} 已核查`);
+    await user.click(screen.getByRole("button",{name:"确认核查"}));
+    await waitFor(()=>expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/approvals/log-1/approve",
+      expect.objectContaining({body:JSON.stringify({color:"RED",itemComments:[1,2,3,4].map(itemPosition=>({itemPosition,comment:`事项 ${itemPosition} 已核查`}))})})
+    ));
   });
 
   it("shows employee names instead of internal ids in log search",async()=>{
     vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({logs:[
       {id:"log-1",employeeId:"employee-1",employeeName:"张三",workDate:"2026-10-11",status:"ARCHIVED",color:"RED"}
     ]}),{status:200}));
-    render(<LogSearchPage/>);
+    render(<MemoryRouter><LogSearchPage/></MemoryRouter>);
     expect(await screen.findByText("张三")).toBeInTheDocument();
     expect(screen.queryByText("employee-1")).not.toBeInTheDocument();
+    expect(screen.getByRole("link",{name:"查看完整信纸"})).toHaveAttribute("href","/leader/logs/log-1");
   });
 
   it("keeps approvers in the configured order",async()=>{

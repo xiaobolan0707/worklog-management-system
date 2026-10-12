@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,7 @@ import { TodayLogPage } from "../../../src/web/pages/employee/TodayLogPage.js";
 import { WorkItemEditor, type EditableWorkItem } from "../../../src/web/components/logs/WorkItemEditor.js";
 import { ApprovalProgress } from "../../../src/web/components/logs/ApprovalProgress.js";
 import { AuthProvider } from "../../../src/web/auth/AuthProvider.js";
+import { HistoryPage } from "../../../src/web/pages/employee/HistoryPage.js";
 
 const emptyItems = () => [1, 2, 3, 4].map(() => ({ content: "", completed: true, images: [] }));
 
@@ -79,11 +80,38 @@ describe("employee worklog pages", () => {
 
   it("shows approval comments and progress without any score", () => {
     render(<ApprovalProgress steps={[
-      { approverId: "leader-1", position: 1, status: "APPROVED", color: "RED", comment: "已完成" },
-      { approverId: "leader-2", position: 2, status: "PENDING", color: null, comment: null }
+      { approverId: "leader-1", approverName: "李经理", approverRole: "LEADER", position: 1, status: "APPROVED", color: "RED", comment: null, itemComments: [{ itemPosition: 1, comment: "已完成" }], actedAt: "2026-10-12T02:00:00.000Z" },
+      { approverId: "leader-2", approverName: "王总", approverRole: "MANAGEMENT", position: 2, status: "PENDING", color: null, comment: null, itemComments: [], actedAt: null }
     ]} />);
     expect(screen.getAllByText("已完成")).not.toHaveLength(0);
-    expect(screen.getByText("第 2 级审批")).toBeInTheDocument();
+    expect(screen.getByText("王总 · 管理层")).toBeInTheDocument();
     expect(screen.queryByText(/score|分数|评分/i)).not.toBeInTheDocument();
+  });
+
+  it("shows each submitted approver comment beside the matching item immediately", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ logs: [{
+      id: "log-1",
+      employeeName: "张三",
+      workDate: "2026-10-12",
+      status: "IN_REVIEW",
+      color: "RED",
+      items: [1, 2, 3, 4].map((position) => ({ position, content: `工作事项 ${position}`, completed: true, images: [] })),
+      approvalSteps: [{
+        approverId: "leader-1",
+        approverName: "李经理",
+        approverRole: "LEADER",
+        position: 1,
+        status: "APPROVED",
+        color: "RED",
+        comment: null,
+        itemComments: [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: `批注 ${itemPosition}` })),
+        actedAt: "2026-10-12T02:00:00.000Z"
+      }]
+    }] }), { status: 200 }));
+    render(<HistoryPage />);
+    const itemOneComments = await screen.findByLabelText("事项 1 评注");
+    expect(within(itemOneComments).getByText("批注 1")).toBeInTheDocument();
+    expect(within(itemOneComments).queryByText("批注 2")).not.toBeInTheDocument();
+    expect(within(itemOneComments).getByText(/李经理/)).toBeInTheDocument();
   });
 });
