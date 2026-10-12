@@ -11,6 +11,7 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
   readonly departments = new Map<string, { id: string; name: string }>();
   readonly approvers = new Map<string, ApproverAssignmentInput[]>();
   readonly protectedUsers = new Set<string>();
+  readonly deletedUsers = new Set<string>();
   settings: ScheduleSettings = {
     submissionDeadline: "18:00",
     reminderMinutesBefore: 30,
@@ -21,11 +22,11 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
   constructor(private readonly authRepository?: InMemoryAuthRepository) {}
 
   async findUserByUsername(username: string) {
-    return [...this.users.values()].find((user) => user.username === username) ?? null;
+    return [...this.users.values()].find((user) => user.username === username && !this.deletedUsers.has(user.id)) ?? null;
   }
 
   async listUsers() {
-    return [...this.users.values()].sort((left, right) => left.username.localeCompare(right.username));
+    return [...this.users.values()].filter((user) => !this.deletedUsers.has(user.id)).sort((left, right) => left.username.localeCompare(right.username));
   }
 
   async listDepartments() {
@@ -47,9 +48,14 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
   async deleteUser(_actorId: string, userId: string) {
     const user = this.users.get(userId);
     if (!user) return null;
-    if (this.protectedUsers.has(userId)) return "HAS_HISTORY" as const;
-    this.users.delete(userId);
-    this.authRepository?.users.delete(userId);
+    user.username = `deleted-${userId}`;
+    user.accountStatus = "DISABLED";
+    this.deletedUsers.add(userId);
+    const authUser = this.authRepository?.users.get(userId);
+    if (authUser) {
+      authUser.username = user.username;
+      authUser.accountStatus = "DISABLED";
+    }
     this.approvers.delete(userId);
     for (const [employeeId, assignments] of this.approvers) {
       this.approvers.set(employeeId, assignments.filter((item) => item.approverId !== userId));

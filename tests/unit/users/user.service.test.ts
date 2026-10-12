@@ -16,21 +16,23 @@ describe("UserService deletion", () => {
     expect(deleteUser).not.toHaveBeenCalled();
   });
 
-  it("requires disabling an account that already has business history", async () => {
-    const service = new UserService({ deleteUser: async () => "HAS_HISTORY" } as never);
+  it("allows deleting an account that has business history", async () => {
+    const deleted = { id: "employee-1", username: "employee" };
+    const service = new UserService({ deleteUser: async () => deleted } as never);
 
-    await expect(service.deleteUser("admin-1", "employee-1")).rejects.toMatchObject({
-      statusCode: 409,
-      code: "USER_HAS_HISTORY"
-    });
+    await expect(service.deleteUser("admin-1", "employee-1")).resolves.toBe(deleted);
   });
 
-  it("does not delete a database user with protected business history", async () => {
-    const remove = vi.fn();
+  it("hides and disables a database user while preserving protected business history", async () => {
+    const update = vi.fn(async () => ({}));
+    const removeAssignments = vi.fn(async () => ({ count: 2 }));
+    const revokeSessions = vi.fn(async () => ({ count: 1 }));
+    const supersedeApprovals = vi.fn(async () => ({ count: 1 }));
+    const returnLogs = vi.fn(async () => ({ count: 1 }));
     const database = {
       $transaction: async (callback: (transaction: unknown) => unknown) => callback({
         user: {
-          findUnique: async () => ({
+          findFirst: async () => ({
             id: "employee-1",
             username: "employee",
             displayName: "张三",
@@ -38,23 +40,37 @@ describe("UserService deletion", () => {
             role: "EMPLOYEE",
             accountStatus: "ACTIVE",
             departmentId: null,
-            mustChangePassword: false,
-            _count: {
-              dailyLogs: 1,
-              logVersions: 0,
-              approvalSteps: 0,
-              colorChanges: 0,
-              rewardSubjects: 0,
-              rewardDecisions: 0
-            }
+            mustChangePassword: false
           }),
-          delete: remove
-        }
+          update
+        },
+        employeeApprover: { deleteMany: removeAssignments },
+        session: { updateMany: revokeSessions },
+        approvalStep: {
+          findMany: async () => [{ dailyLogId: "log-1" }],
+          updateMany: supersedeApprovals
+        },
+        dailyLog: { updateMany: returnLogs },
+        auditEvent: { create: async () => ({}) }
       })
     };
     const repository = new PrismaAdministrationRepository(database as never);
 
-    await expect(repository.deleteUser("admin-1", "employee-1")).resolves.toBe("HAS_HISTORY");
-    expect(remove).not.toHaveBeenCalled();
+    await expect(repository.deleteUser("admin-1", "employee-1")).resolves.toMatchObject({ id: "employee-1" });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "employee-1" },
+      data: expect.objectContaining({
+        accountStatus: "DISABLED",
+        username: "deleted-employee-1",
+        deletedAt: expect.any(Date)
+      })
+    }));
+    expect(removeAssignments).toHaveBeenCalled();
+    expect(revokeSessions).toHaveBeenCalled();
+    expect(supersedeApprovals).toHaveBeenCalled();
+    expect(returnLogs).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "log-1" }),
+      data: expect.objectContaining({ status: "RETURNED" })
+    }));
   });
 });

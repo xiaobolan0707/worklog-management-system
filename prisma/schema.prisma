@@ -90,6 +90,7 @@ model User {
   lockedUntil        DateTime?       @map("locked_until")
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @updatedAt @map("updated_at")
+  deletedAt          DateTime?       @map("deleted_at")
   department         Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   approverAssignments EmployeeApprover[] @relation("ApproverAssignments")
   employeeApprovers  EmployeeApprover[] @relation("EmployeeAssignments")

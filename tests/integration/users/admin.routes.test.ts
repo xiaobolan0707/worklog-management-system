@@ -136,7 +136,7 @@ describe("administrator organization routes", () => {
     expect(response.json().code).toBe("FORBIDDEN");
   });
 
-  it("deletes an unused account as an administrator", async () => {
+  it("hides and disables an account with business history as an administrator", async () => {
     const app = await createApp();
     const auth = await credentials(app, "admin", "Admin-password-42");
     const target = await administrationRepository.createUser({
@@ -148,6 +148,7 @@ describe("administrator organization routes", () => {
       departmentId: null,
       mustChangePassword: true
     });
+    administrationRepository.protectedUsers.add(target.id);
 
     const response = await app.inject({
       method: "DELETE",
@@ -156,7 +157,12 @@ describe("administrator organization routes", () => {
     });
 
     expect(response.statusCode).toBe(204);
-    expect(administrationRepository.users.has(target.id)).toBe(false);
+    expect(administrationRepository.users.get(target.id)).toMatchObject({
+      accountStatus: "DISABLED",
+      username: `deleted-${target.id}`
+    });
+    const listed = await app.inject({ method: "GET", url: "/api/admin/users", headers: { cookie: auth.cookie } });
+    expect(listed.json().users).toEqual([]);
   });
 
   it("validates worklog deadline and reminder settings", async () => {

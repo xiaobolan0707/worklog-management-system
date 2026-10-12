@@ -27,7 +27,7 @@ export interface ScheduleSettings {
   timezone: "Asia/Shanghai";
 }
 
-export type DeleteUserResult = AdminUserRecord | "HAS_HISTORY" | null;
+export type DeleteUserResult = AdminUserRecord | null;
 
 export interface AdministrationRepository {
   findUserByUsername(username: string): Promise<AdminUserRecord | null>;
@@ -123,9 +123,6 @@ export class UserService {
       throw new AdministrationError(400, "CANNOT_DELETE_SELF", "不能删除当前登录的管理员账号");
     }
     const result = await this.repository.deleteUser(actorId, userId);
-    if (result === "HAS_HISTORY") {
-      throw new AdministrationError(409, "USER_HAS_HISTORY", "该账号已有业务记录，请改为停用");
-    }
     if (!result) {
       throw new AdministrationError(404, "USER_NOT_FOUND", "用户不存在");
     }
@@ -183,6 +180,7 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
 
   async listUsers() {
     return this.database.user.findMany({
+      where: { deletedAt: null },
       orderBy: [{ accountStatus: "asc" }, { username: "asc" }],
       select: {
         id: true,
@@ -223,8 +221,8 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
 
   async deleteUser(actorId: string, userId: string): Promise<DeleteUserResult> {
     return this.database.$transaction(async (transaction) => {
-      const user = await transaction.user.findUnique({
-        where: { id: userId },
+      const user = await transaction.user.findFirst({
+        where: { id: userId, deletedAt: null },
         select: {
           id: true,
           username: true,
@@ -233,25 +231,42 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
           role: true,
           accountStatus: true,
           departmentId: true,
-          mustChangePassword: true,
-          _count: {
-            select: {
-              dailyLogs: true,
-              logVersions: true,
-              approvalSteps: true,
-              colorChanges: true,
-              rewardSubjects: true,
-              rewardDecisions: true
-            }
-          }
+          mustChangePassword: true
         }
       });
       if (!user) return null;
-      const { _count, ...record } = user;
-      if (Object.values(_count).some((count) => count > 0)) return "HAS_HISTORY";
+      const deletedAt = new Date();
+      const pendingSteps = await transaction.approvalStep.findMany({
+        where: { approverId: userId, status: "PENDING" },
+        select: { dailyLogId: true },
+        distinct: ["dailyLogId"]
+      });
+
+      for (const { dailyLogId } of pendingSteps) {
+        await transaction.approvalStep.updateMany({
+          where: { dailyLogId, status: "PENDING" },
+          data: { status: "SUPERSEDED" }
+        });
+        await transaction.dailyLog.updateMany({
+          where: { id: dailyLogId, status: { in: ["SUBMITTED", "IN_REVIEW"] } },
+          data: { status: "RETURNED", color: "GREEN", version: { increment: 1 } }
+        });
+      }
 
       await transaction.employeeApprover.deleteMany({
         where: { OR: [{ employeeId: userId }, { approverId: userId }] }
+      });
+      await transaction.session.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: deletedAt }
+      });
+      await transaction.user.update({
+        where: { id: userId },
+        data: {
+          username: `deleted-${userId}`,
+          accountStatus: "DISABLED",
+          deletedAt
+        }
       });
       await writeAudit(transaction, {
         actorId,
@@ -261,8 +276,7 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
         entityId: userId,
         metadata: { username: user.username, role: user.role }
       });
-      await transaction.user.delete({ where: { id: userId } });
-      return record;
+      return user;
     });
   }
 

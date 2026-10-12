@@ -88,6 +88,8 @@ describe("leader and administrator pages",()=>{
     render(<UsersPage/>);
     await user.click(await screen.findByRole("button",{name:"删除待删除用户"}));
 
+    expect(window.confirm).toHaveBeenCalledWith("确定删除用户“待删除用户”吗？账号将永久停用，但历史业务记录会保留。");
+
     await waitFor(()=>expect(fetchMock).toHaveBeenCalledWith(
       "/api/admin/users/user-1",
       expect.objectContaining({method:"DELETE"})

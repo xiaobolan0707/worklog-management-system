@@ -58,7 +58,7 @@ export function UsersPage() {
 
   async function remove(user: AdminUser) {
     const label = user.displayName || user.username;
-    if (!window.confirm(`确定删除用户“${label}”吗？此操作不可撤销。`)) return;
+    if (!window.confirm(`确定删除用户“${label}”吗？账号将永久停用，但历史业务记录会保留。`)) return;
     try {
       await apiRequest(`/admin/users/${user.id}`, { method: "DELETE" });
       if (resetUserId === user.id) setResetUserId("");
