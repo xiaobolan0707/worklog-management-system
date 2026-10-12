@@ -1,3 +1,63 @@
-import { useState } from "react";
-import { apiRequest } from "../../api/client.js";
-export function SettingsPage(){const[submission,setSubmission]=useState("18:00");const[approval,setApproval]=useState("12:00");const[minutes,setMinutes]=useState(30);const[error,setError]=useState("");const[notice,setNotice]=useState("");async function save(){if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(submission)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(approval)){setError("时间格式应为 00:00–23:59");return;}setError("");await apiRequest("/admin/settings",{method:"PUT",body:JSON.stringify({submissionDeadline:submission,approvalDeadline:approval,reminderMinutesBefore:minutes,timezone:"Asia/Shanghai"})});setNotice("设置已保存");}return <main className="page"><div className="page-head"><div><p className="eyebrow">SYSTEM SETTINGS</p><h1>系统设置</h1><p>统一使用北京时间。</p></div></div><section className="panel settings-grid"><label className="field"><span>日志截止时间</span><input value={submission} onChange={event=>setSubmission(event.target.value)}/></label><label className="field"><span>提前提醒（分钟）</span><input type="number" min={0} max={1440} value={minutes} onChange={event=>setMinutes(Number(event.target.value))}/></label><label className="field"><span>审批截止时间</span><input value={approval} onChange={event=>setApproval(event.target.value)}/></label>{error&&<p className="form-error" role="alert">{error}</p>}<button className="btn primary" onClick={()=>void save()}>保存设置</button>{notice&&<p className="notice">{notice}</p>}</section></main>}
+import { useEffect, useState } from "react";
+
+import { ApiError, apiRequest } from "../../api/client.js";
+
+interface ScheduleSettings {
+  submissionDeadline: string;
+  reminderMinutesBefore: number;
+  approvalDeadline: string;
+  timezone: "Asia/Shanghai";
+}
+
+export function SettingsPage() {
+  const [submission, setSubmission] = useState("18:00");
+  const [approval, setApproval] = useState("12:00");
+  const [minutes, setMinutes] = useState(30);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    void apiRequest<{ settings: ScheduleSettings }>("/admin/settings")
+      .then(({ settings }) => {
+        setSubmission(settings.submissionDeadline);
+        setMinutes(settings.reminderMinutesBefore);
+        setApproval(settings.approvalDeadline);
+      })
+      .catch((cause) => setError(cause instanceof ApiError ? cause.message : "设置加载失败，请刷新重试"));
+  }, []);
+
+  async function save() {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(submission) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(approval)) {
+      setError("时间格式应为 00:00–23:59");
+      return;
+    }
+    setError("");
+    setNotice("");
+    try {
+      await apiRequest("/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          submissionDeadline: submission,
+          approvalDeadline: approval,
+          reminderMinutesBefore: minutes,
+          timezone: "Asia/Shanghai"
+        })
+      });
+      setNotice("设置已保存");
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "设置保存失败，请稍后重试");
+    }
+  }
+
+  return <main className="page">
+    <div className="page-head"><div><p className="eyebrow">SYSTEM SETTINGS</p><h1>系统设置</h1><p>统一使用北京时间。</p></div></div>
+    <section className="panel settings-grid">
+      <label className="field"><span>日志截止时间</span><input value={submission} onChange={(event) => setSubmission(event.target.value)} /></label>
+      <label className="field"><span>提前提醒（分钟）</span><input type="number" min={0} max={1440} value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} /></label>
+      <label className="field"><span>审批截止时间</span><input value={approval} onChange={(event) => setApproval(event.target.value)} /></label>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <button className="btn primary" onClick={() => void save()}>保存设置</button>
+      {notice && <p className="notice">{notice}</p>}
+    </section>
+  </main>;
+}

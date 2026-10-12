@@ -70,6 +70,21 @@ describe("leader and administrator pages",()=>{
     expect(await screen.findByRole("alert")).toHaveTextContent("时间格式");
   });
 
+  it("loads and displays the saved schedule settings",async()=>{
+    vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({settings:{
+      submissionDeadline:"19:30",
+      reminderMinutesBefore:45,
+      approvalDeadline:"13:15",
+      timezone:"Asia/Shanghai"
+    }}),{status:200}));
+
+    render(<SettingsPage/>);
+
+    expect(await screen.findByDisplayValue("19:30")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("45")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("13:15")).toBeInTheDocument();
+  });
+
   it("confirms and deletes an unused user from user management",async()=>{
     let users=[{id:"user-1",username:"unused",displayName:"待删除用户",role:"EMPLOYEE",accountStatus:"ACTIVE"}];
     const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(input,init)=>{
