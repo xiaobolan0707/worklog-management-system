@@ -6,6 +6,7 @@ import { LogError, type LogService } from "./log.service.js";
 import { logDraftSchema } from "./log.schemas.js";
 
 const idParams = z.object({ id: z.string().min(1).max(191) });
+const logBodyLimit = 70 * 1024 * 1024;
 
 export interface LogRoutesOptions {
   logService: LogService;
@@ -25,7 +26,7 @@ function sendLogError(reply: FastifyReply, error: unknown) {
 export const logRoutes: FastifyPluginAsync<LogRoutesOptions> = async (app, options) => {
   const employeeOnly = app.requireRole("EMPLOYEE");
 
-  app.post("/api/logs/drafts", { preHandler: employeeOnly }, async (request, reply) => {
+  app.post("/api/logs/drafts", { preHandler: employeeOnly, bodyLimit: logBodyLimit }, async (request, reply) => {
     try {
       options.authService.verifyCsrf(
         request.authenticated!,
@@ -42,7 +43,7 @@ export const logRoutes: FastifyPluginAsync<LogRoutesOptions> = async (app, optio
     }
   });
 
-  app.put("/api/logs/:id", { preHandler: employeeOnly }, async (request, reply) => {
+  app.put("/api/logs/:id", { preHandler: employeeOnly, bodyLimit: logBodyLimit }, async (request, reply) => {
     try {
       options.authService.verifyCsrf(
         request.authenticated!,

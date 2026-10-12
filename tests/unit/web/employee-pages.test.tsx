@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -42,6 +42,21 @@ describe("employee worklog pages", () => {
     render(<Harness />);
     await user.upload(screen.getByLabelText("上传图片 1"), new File(["abc"], "现场.png", { type: "image/png" }));
     expect(await screen.findByRole("img", { name: "现场.png" })).toBeInTheDocument();
+  });
+
+  it("moves an image earlier within the same work item", async () => {
+    const onChange = vi.fn();
+    const items: EditableWorkItem[] = [
+      { content: "现场", completed: true, images: [
+        { id: "a", name: "A.png", type: "image/png", size: 1, dataUrl: "data:image/png;base64,YQ==" },
+        { id: "b", name: "B.png", type: "image/png", size: 1, dataUrl: "data:image/png;base64,Yg==" }
+      ] },
+      ...emptyItems().slice(1)
+    ];
+    const user = userEvent.setup();
+    render(<WorkItemEditor items={items} onChange={onChange} employeeName="张三" workDate="2026-10-12" />);
+    await user.click(screen.getByRole("button", { name: "上移图片 B.png" }));
+    expect(onChange.mock.calls.at(-1)?.[0][0].images.map((image: { name: string }) => image.name)).toEqual(["B.png", "A.png"]);
   });
 
   it("requires unfinished reasons and submits a persisted green log", async () => {
@@ -89,7 +104,7 @@ describe("employee worklog pages", () => {
   });
 
   it("shows each submitted approver comment beside the matching item immediately", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ logs: [{
+    const log = {
       id: "log-1",
       employeeName: "张三",
       workDate: "2026-10-12",
@@ -107,11 +122,17 @@ describe("employee worklog pages", () => {
         itemComments: [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: `批注 ${itemPosition}` })),
         actedAt: "2026-10-12T02:00:00.000Z"
       }]
-    }] }), { status: 200 }));
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ logs: [{ ...log, approvalSteps: [] }] }), { status: 200 }))
+      .mockResolvedValue(new Response(JSON.stringify({ logs: [log] }), { status: 200 }));
     render(<HistoryPage />);
+    await screen.findByText("工作事项 1");
+    fireEvent(window, new Event("focus"));
     const itemOneComments = await screen.findByLabelText("事项 1 评注");
-    expect(within(itemOneComments).getByText("批注 1")).toBeInTheDocument();
+    expect(await within(itemOneComments).findByText("批注 1")).toBeInTheDocument();
     expect(within(itemOneComments).queryByText("批注 2")).not.toBeInTheDocument();
     expect(within(itemOneComments).getByText(/李经理/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -70,8 +70,7 @@ export interface BuildAppOptions {
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: options.env.NODE_ENV !== "test",
-    bodyLimit: 70 * 1024 * 1024
+    logger: options.env.NODE_ENV !== "test"
   });
   const database = options.authRepository && options.administrationRepository && options.logRepository && options.approvalRepository && options.reminderRepository && options.reportRepository && options.rewardRepository && options.auditQueryRepository
     ? null

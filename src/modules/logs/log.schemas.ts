@@ -8,6 +8,14 @@ export const logImageSchema = z.object({
   type: imageTypeSchema,
   size: z.number().int().positive().max(10 * 1024 * 1024),
   dataUrl: z.string().max(14_000_000).regex(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/)
+}).superRefine((image, context) => {
+  if (!image.dataUrl.startsWith(`data:${image.type};base64,`)) {
+    context.addIssue({ code: "custom", message: "image type does not match data", path: ["type"] });
+  }
+  const base64 = image.dataUrl.slice(image.dataUrl.indexOf(",") + 1);
+  if (Buffer.byteLength(base64, "base64") !== image.size) {
+    context.addIssue({ code: "custom", message: "image size does not match data", path: ["size"] });
+  }
 });
 
 const logItemSchema = z

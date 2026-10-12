@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   logDraftSchema,
+  logImageSchema,
   logSubmissionItemsSchema
 } from "../../../src/modules/logs/log.schemas.js";
 
@@ -61,5 +62,11 @@ describe("daily log validation", () => {
       workDate: "2026-10-10",
       items: [{ content: "", completed: true, images: Array(7).fill(image) }, ...fourItems.slice(1)]
     })).toThrow();
+  });
+
+  it("rejects forged image type or byte size metadata", () => {
+    const base = { id: "image-1", name: "现场.png", type: "image/png" as const, size: 3 };
+    expect(() => logImageSchema.parse({ ...base, dataUrl: "data:image/jpeg;base64,YWJj" })).toThrow(/type/i);
+    expect(() => logImageSchema.parse({ ...base, size: 1, dataUrl: "data:image/png;base64,YWJj" })).toThrow(/size/i);
   });
 });

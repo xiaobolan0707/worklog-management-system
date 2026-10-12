@@ -28,6 +28,14 @@ export function WorkItemEditor({
     onChange(items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
   }
 
+  function moveImage(index: number, imageIndex: number, direction: -1 | 1) {
+    const images = [...(items[index]?.images ?? [])];
+    const target = imageIndex + direction;
+    if (target < 0 || target >= images.length) return;
+    [images[imageIndex], images[target]] = [images[target]!, images[imageIndex]!];
+    update(index, { images });
+  }
+
   function addImages(index: number, files: FileList | null) {
     if (!files?.length) return;
     const existing = items[index]?.images ?? [];
@@ -56,7 +64,9 @@ export function WorkItemEditor({
         dataUrl: String(reader.result)
       });
       reader.readAsDataURL(file);
-    }))).then((images) => update(index, { images: [...existing, ...images] }));
+    })))
+      .then((images) => update(index, { images: [...existing, ...images] }))
+      .catch(() => setImageError("图片读取失败，请重新选择"));
   }
 
   return (
@@ -75,7 +85,11 @@ export function WorkItemEditor({
             </div>
             <LetterImages images={item.images} />
             {!disabled && <label className="image-upload"><span>＋ 插入图片</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label={`上传图片 ${index + 1}`} onChange={(event) => addImages(index, event.target.files)} /></label>}
-            {!disabled && item.images?.map((image) => <button type="button" className="text-button danger" key={image.id} onClick={() => update(index, { images: item.images?.filter((current) => current.id !== image.id) ?? [] })}>删除图片：{image.name}</button>)}
+            {!disabled && item.images?.map((image, imageIndex) => <div className="image-actions" key={image.id}>
+              {imageIndex > 0 && <button type="button" className="text-button" aria-label={`上移图片 ${image.name}`} onClick={() => moveImage(index, imageIndex, -1)}>上移</button>}
+              {imageIndex < (item.images?.length ?? 0) - 1 && <button type="button" className="text-button" aria-label={`下移图片 ${image.name}`} onClick={() => moveImage(index, imageIndex, 1)}>下移</button>}
+              <button type="button" className="text-button danger" onClick={() => update(index, { images: item.images?.filter((current) => current.id !== image.id) ?? [] })}>删除图片：{image.name}</button>
+            </div>)}
             {!disabled && items.length > 4 && <button type="button" className="text-button danger" aria-label={`删除工作项 ${index + 1}`} onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))}>删除此项</button>}
           </div>
         )}
