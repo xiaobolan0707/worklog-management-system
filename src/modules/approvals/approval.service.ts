@@ -1,12 +1,18 @@
-import type { PrismaClient } from "../../generated/prisma/client.js";
+import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
 import { appendAudit } from "../audit/audit.repository.js";
+import type { ItemCommentRecord } from "../logs/log.repository.js";
+import type { LogImagePayload } from "../logs/log.schemas.js";
 
 export interface ApprovalStepRecord {
   approverId: string;
+  approverName: string;
+  approverRole: string;
   position: number;
   status: string;
   color?: "RED" | "GRAY" | null;
   comment?: string | null;
+  itemComments: ItemCommentRecord[];
+  actedAt: string | null;
 }
 
 export interface ApprovalLogRecord {
@@ -22,6 +28,7 @@ export interface ApprovalLogRecord {
     content: string;
     completed: boolean;
     unfinishedReason: string | null;
+    images: LogImagePayload[];
   }[];
   approvalSteps: ApprovalStepRecord[];
 }
@@ -30,8 +37,8 @@ export type ApprovalResult = ApprovalLogRecord | "NOT_FOUND" | "CONFLICT";
 
 export interface ApprovalRepository {
   findApprovalLog(logId: string): Promise<ApprovalLogRecord | null>;
-  approve(logId: string, leaderId: string, color: "RED" | "GRAY", comment: string): Promise<ApprovalResult>;
-  returnLog(logId: string, leaderId: string, comment: string): Promise<ApprovalResult>;
+  approve(logId: string, leaderId: string, color: "RED" | "GRAY", itemComments: ItemCommentRecord[]): Promise<ApprovalResult>;
+  returnLog(logId: string, leaderId: string, itemComments: ItemCommentRecord[]): Promise<ApprovalResult>;
   changeColor(
     logId: string,
     leaderId: string,
@@ -84,17 +91,34 @@ export class ApprovalService {
     return log;
   }
 
+  private validateItemComments(log: ApprovalLogRecord, itemComments: ItemCommentRecord[]) {
+    const expected = log.items.map((item) => item.position).sort((a, b) => a - b);
+    const actual = itemComments.map((item) => item.itemPosition).sort((a, b) => a - b);
+    if (
+      expected.length !== actual.length ||
+      expected.some((position, index) => position !== actual[index]) ||
+      itemComments.some((item) => !item.comment.trim())
+    ) {
+      throw new ApprovalError(400, "ITEM_COMMENTS_INCOMPLETE", "请针对每一项工作填写批注");
+    }
+    return expected.map((position) => ({
+      itemPosition: position,
+      comment: itemComments.find((item) => item.itemPosition === position)!.comment.trim()
+    }));
+  }
+
   async approveCurrentStep(
     logId: string,
     leaderId: string,
     color: "RED" | "GRAY",
-    comment: string
+    itemComments: ItemCommentRecord[]
   ) {
     if (color !== "RED" && color !== "GRAY") {
       throw new ApprovalError(400, "INVALID_COLOR", "审批只能选择红色或灰色");
     }
-    await this.assertCurrent(logId, leaderId);
-    const result = await this.repository.approve(logId, leaderId, color, comment.trim());
+    const log = await this.assertCurrent(logId, leaderId);
+    const normalizedComments = this.validateItemComments(log, itemComments);
+    const result = await this.repository.approve(logId, leaderId, color, normalizedComments);
     if (result === "CONFLICT") {
       throw new ApprovalError(409, "APPROVAL_CONFLICT", "日志已被处理，请刷新");
     }
@@ -102,10 +126,10 @@ export class ApprovalService {
     return result;
   }
 
-  async returnCurrentStep(logId: string, leaderId: string, comment: string) {
-    if (!comment.trim()) throw new ApprovalError(400, "RETURN_REASON_REQUIRED", "退回时必须填写原因");
-    await this.assertCurrent(logId, leaderId);
-    const result = await this.repository.returnLog(logId, leaderId, comment.trim());
+  async returnCurrentStep(logId: string, leaderId: string, itemComments: ItemCommentRecord[]) {
+    const log = await this.assertCurrent(logId, leaderId);
+    const normalizedComments = this.validateItemComments(log, itemComments);
+    const result = await this.repository.returnLog(logId, leaderId, normalizedComments);
     if (result === "CONFLICT") throw new ApprovalError(409, "APPROVAL_CONFLICT", "日志已被处理，请刷新");
     if (result === "NOT_FOUND") throw new ApprovalError(403, "FORBIDDEN", "无权操作此日志");
     return result;
@@ -139,6 +163,10 @@ function dateText(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+function jsonArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
+}
+
 export class PrismaApprovalRepository implements ApprovalRepository {
   constructor(private readonly database: PrismaClient) {}
 
@@ -148,7 +176,10 @@ export class PrismaApprovalRepository implements ApprovalRepository {
       include: {
         employee: { select: { displayName: true, username: true } },
         items: { orderBy: { position: "asc" } },
-        approvalSteps: { orderBy: { position: "asc" } }
+        approvalSteps: {
+          orderBy: { position: "asc" },
+          include: { approver: { select: { displayName: true, username: true, role: true } } }
+        }
       }
     });
     if (!log) return null;
@@ -165,19 +196,24 @@ export class PrismaApprovalRepository implements ApprovalRepository {
         position: item.position,
         content: item.content,
         completed: item.completed,
-        unfinishedReason: item.unfinishedReason
+        unfinishedReason: item.unfinishedReason,
+        images: jsonArray<LogImagePayload>(item.images)
       })),
       approvalSteps: steps.map((step) => ({
         approverId: step.approverId,
+        approverName: step.approver.displayName ?? step.approver.username,
+        approverRole: step.approver.role,
         position: step.position,
         status: step.status,
         color: step.color === "GREEN" ? null : step.color,
-        comment: step.comment
+        comment: step.comment,
+        itemComments: jsonArray<ItemCommentRecord>(step.itemComments),
+        actedAt: step.actedAt?.toISOString() ?? null
       }))
     };
   }
 
-  async approve(logId: string, leaderId: string, color: "RED" | "GRAY", comment: string) {
+  async approve(logId: string, leaderId: string, color: "RED" | "GRAY", itemComments: ItemCommentRecord[]) {
     return this.database.$transaction(async (transaction): Promise<ApprovalResult> => {
       const log = await transaction.dailyLog.findUnique({
         where: { id: logId },
@@ -189,7 +225,13 @@ export class PrismaApprovalRepository implements ApprovalRepository {
       if (!current || current.approverId !== leaderId) return "CONFLICT";
       const updated = await transaction.approvalStep.updateMany({
         where: { id: current.id, status: "PENDING" },
-        data: { status: "APPROVED", color, comment, actedAt: new Date() }
+        data: {
+          status: "APPROVED",
+          color,
+          comment: null,
+          itemComments: itemComments as unknown as Prisma.InputJsonValue,
+          actedAt: new Date()
+        }
       });
       if (updated.count !== 1) return "CONFLICT";
       const final = !steps.some((step) => step.status === "PENDING" && step.id !== current.id);
@@ -209,13 +251,13 @@ export class PrismaApprovalRepository implements ApprovalRepository {
         action: "LOG_APPROVED",
         entityType: "DailyLog",
         entityId: logId,
-        metadata: { color, position: current.position, final }
+        metadata: { color, position: current.position, final, itemComments } as unknown as Prisma.InputJsonValue
       });
       return (await new PrismaApprovalRepository(transaction as unknown as PrismaClient).findApprovalLog(logId))!;
     });
   }
 
-  async returnLog(logId: string, leaderId: string, comment: string) {
+  async returnLog(logId: string, leaderId: string, itemComments: ItemCommentRecord[]) {
     return this.database.$transaction(async (transaction): Promise<ApprovalResult> => {
       const log = await transaction.dailyLog.findUnique({
         where: { id: logId },
@@ -228,7 +270,12 @@ export class PrismaApprovalRepository implements ApprovalRepository {
       if (!current || current.approverId !== leaderId) return "CONFLICT";
       const changed = await transaction.approvalStep.updateMany({
         where: { id: current.id, status: "PENDING" },
-        data: { status: "RETURNED", comment, actedAt: new Date() }
+        data: {
+          status: "RETURNED",
+          comment: null,
+          itemComments: itemComments as unknown as Prisma.InputJsonValue,
+          actedAt: new Date()
+        }
       });
       if (changed.count !== 1) return "CONFLICT";
       await transaction.approvalStep.updateMany({
@@ -249,7 +296,7 @@ export class PrismaApprovalRepository implements ApprovalRepository {
         action: "LOG_RETURNED",
         entityType: "DailyLog",
         entityId: logId,
-        metadata: { reason: comment }
+        metadata: { itemComments } as unknown as Prisma.InputJsonValue
       });
       return (await new PrismaApprovalRepository(transaction as unknown as PrismaClient).findApprovalLog(logId))!;
     });

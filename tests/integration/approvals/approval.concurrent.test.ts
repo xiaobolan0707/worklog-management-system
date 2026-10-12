@@ -10,13 +10,21 @@ describe("concurrent approval", () => {
       id: "log-1",
       employeeId: "employee-1",
       workDate: "2026-10-10",
-      approverIds: ["leader-1"]
+      approverIds: ["leader-1"],
+      items: [1, 2, 3, 4].map((position) => ({
+        position,
+        content: `工作事项 ${position}`,
+        completed: true,
+        unfinishedReason: null,
+        images: []
+      }))
     });
     const service = new ApprovalService(repository, () => new Date("2026-10-10T04:00:00.000Z"));
 
+    const comments = [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "ok" }));
     const results = await Promise.allSettled([
-      service.approveCurrentStep("log-1", "leader-1", "RED", "ok"),
-      service.approveCurrentStep("log-1", "leader-1", "RED", "ok")
+      service.approveCurrentStep("log-1", "leader-1", "RED", comments),
+      service.approveCurrentStep("log-1", "leader-1", "RED", comments)
     ]);
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);

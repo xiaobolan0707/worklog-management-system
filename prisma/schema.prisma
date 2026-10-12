@@ -158,6 +158,7 @@ model LogItem {
   content          String   @db.Text
   completed        Boolean  @default(false)
   unfinishedReason String?  @map("unfinished_reason") @db.Text
+  images           Json?
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
   dailyLog         DailyLog @relation(fields: [dailyLogId], references: [id], onDelete: Cascade)
@@ -190,6 +191,7 @@ model ApprovalStep {
   status     ApprovalStatus @default(PENDING)
   color      WorkColor?
   comment    String?        @db.Text
+  itemComments Json?        @map("item_comments")
   actedAt    DateTime?      @map("acted_at")
   createdAt  DateTime       @default(now()) @map("created_at")
   updatedAt  DateTime       @updatedAt @map("updated_at")

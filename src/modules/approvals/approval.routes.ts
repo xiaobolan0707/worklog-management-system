@@ -42,7 +42,7 @@ export const approvalRoutes: FastifyPluginAsync<{
           logId,
           request.authenticated!.user.id,
           input.color,
-          input.comment
+          input.itemComments
         )
       };
     } catch (error) {
@@ -54,12 +54,12 @@ export const approvalRoutes: FastifyPluginAsync<{
     try {
       csrf(request);
       const { logId } = paramsSchema.parse(request.params);
-      const { comment } = returnSchema.parse(request.body);
+      const { itemComments } = returnSchema.parse(request.body);
       return {
         log: await options.approvalService.returnCurrentStep(
           logId,
           request.authenticated!.user.id,
-          comment
+          itemComments
         )
       };
     } catch (error) {

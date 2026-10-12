@@ -12,7 +12,14 @@ function setup(workDate = "2026-10-10", now = "2026-10-10T04:00:00.000Z") {
     id: "log-1",
     employeeId: "employee-1",
     workDate,
-    approverIds: ["leader-1", "leader-2"]
+    approverIds: ["leader-1", "leader-2"],
+    items: [1, 2, 3, 4].map((position) => ({
+      position,
+      content: `工作事项 ${position}`,
+      completed: true,
+      unfinishedReason: null,
+      images: []
+    }))
   });
   return {
     repository,
@@ -38,7 +45,8 @@ describe("ApprovalService", () => {
               position: 1,
               content: "完成登录接口",
               completed: true,
-              unfinishedReason: null
+              unfinishedReason: null,
+              images: []
             }
           ],
           approvalSteps: [
@@ -48,7 +56,10 @@ describe("ApprovalService", () => {
               submissionNumber: 1,
               status: "PENDING",
               color: null,
-              comment: null
+              comment: null,
+              itemComments: null,
+              actedAt: null,
+              approver: { displayName: "李经理", username: "leader", role: "LEADER" }
             }
           ]
         })
@@ -63,48 +74,61 @@ describe("ApprovalService", () => {
           position: 1,
           content: "完成登录接口",
           completed: true,
-          unfinishedReason: null
+          unfinishedReason: null,
+          images: []
         }
-      ]
+      ],
+      approvalSteps: [{ approverName: "李经理", approverRole: "LEADER" }]
     });
+  });
+
+  it("requires one non-empty comment for every work item", async () => {
+    const { service } = setup();
+    await expect(service.approveCurrentStep("log-1", "leader-1", "RED", [
+      { itemPosition: 1, comment: "完成" }
+    ])).rejects.toMatchObject({ code: "ITEM_COMMENTS_INCOMPLETE" });
   });
 
   it("enforces approval order and archives after the final red/gray decision", async () => {
     const { repository, service } = setup();
-    await expect(service.approveCurrentStep("log-1", "leader-2", "RED", "完成")).rejects.toMatchObject({
+    const comments = [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: `事项 ${itemPosition} 已完成` }));
+    await expect(service.approveCurrentStep("log-1", "leader-2", "RED", comments)).rejects.toMatchObject({
       code: "NOT_CURRENT_APPROVER"
     });
 
-    const first = await service.approveCurrentStep("log-1", "leader-1", "RED", "完成");
+    const first = await service.approveCurrentStep("log-1", "leader-1", "RED", comments);
     expect(first).toMatchObject({ status: "IN_REVIEW", color: "RED" });
+    expect(first.approvalSteps[0]).toMatchObject({ itemComments: comments });
     expect(first).not.toHaveProperty("score");
 
-    const final = await service.approveCurrentStep("log-1", "leader-2", "GRAY", "未完成");
+    const final = await service.approveCurrentStep("log-1", "leader-2", "GRAY", comments);
     expect(final).toMatchObject({ status: "ARCHIVED", color: "GRAY" });
     expect(repository.audits.filter((event) => event.action === "LOG_APPROVED")).toHaveLength(2);
   });
 
   it("allows review on the work date or following day and rejects later review", async () => {
     const current = setup();
+    const comments = [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "x" }));
     await expect(
-      current.service.approveCurrentStep("log-1", "leader-1", "GREEN" as "RED", "x")
+      current.service.approveCurrentStep("log-1", "leader-1", "GREEN" as "RED", comments)
     ).rejects.toMatchObject({ code: "INVALID_COLOR" });
 
     const followingDay = setup("2026-10-10", "2026-10-11T04:00:00.000Z");
     await expect(
-      followingDay.service.approveCurrentStep("log-1", "leader-1", "RED", "次日核查完成")
+      followingDay.service.approveCurrentStep("log-1", "leader-1", "RED", [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "次日核查完成" })))
     ).resolves.toMatchObject({ color: "RED" });
 
     const late = setup("2026-10-09", "2026-10-11T04:00:00.000Z");
     await expect(
-      late.service.approveCurrentStep("log-1", "leader-1", "RED", "x")
+      late.service.approveCurrentStep("log-1", "leader-1", "RED", [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "x" })))
     ).rejects.toMatchObject({ code: "APPROVAL_DATE_EXPIRED" });
   });
 
   it("requires a reason when an authorized leader changes an archived color", async () => {
     const { service } = setup();
-    await service.approveCurrentStep("log-1", "leader-1", "RED", "ok");
-    await service.approveCurrentStep("log-1", "leader-2", "RED", "ok");
+    const comments = [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "ok" }));
+    await service.approveCurrentStep("log-1", "leader-1", "RED", comments);
+    await service.approveCurrentStep("log-1", "leader-2", "RED", comments);
 
     await expect(service.changeReviewedColor("log-1", "leader-1", "GRAY", "")).rejects.toMatchObject({
       code: "COLOR_CHANGE_REASON_REQUIRED"

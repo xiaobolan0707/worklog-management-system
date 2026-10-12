@@ -59,7 +59,16 @@ export class InMemoryLogRepository implements LogRepository {
     log.color = "GREEN";
     log.submissionCount += 1;
     log.version += 1;
-    log.approvalSteps = assignments.map((assignment) => ({ ...assignment, status: "PENDING" }));
+    log.approvalSteps = assignments.map((assignment) => ({
+      ...assignment,
+      approverName: assignment.approverId,
+      approverRole: "LEADER",
+      status: "PENDING",
+      color: null,
+      comment: null,
+      itemComments: [],
+      actedAt: null
+    }));
     this.audits.push({ action: "LOG_SUBMITTED", entityId: log.id });
     return log;
   }

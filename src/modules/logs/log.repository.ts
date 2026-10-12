@@ -1,12 +1,23 @@
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import { appendAudit } from "../audit/audit.repository.js";
+import { logSubmissionItemsSchema, type LogImagePayload } from "./log.schemas.js";
 
 export type LogStatusValue = "DRAFT" | "SUBMITTED" | "IN_REVIEW" | "RETURNED" | "ARCHIVED";
 export type LogColorValue = "GREEN" | "RED" | "GRAY";
 
 export interface LogDraftInput {
   workDate: string;
-  items: { content: string; completed: boolean; unfinishedReason?: string | undefined }[];
+  items: {
+    content: string;
+    completed: boolean;
+    unfinishedReason?: string | undefined;
+    images: LogImagePayload[];
+  }[];
+}
+
+export interface ItemCommentRecord {
+  itemPosition: number;
+  comment: string;
 }
 
 export interface DailyLogRecord {
@@ -23,12 +34,23 @@ export interface DailyLogRecord {
     content: string;
     completed: boolean;
     unfinishedReason?: string | null | undefined;
+    images: LogImagePayload[];
   }[];
-  approvalSteps: { approverId: string; position: number; status: string }[];
+  approvalSteps: {
+    approverId: string;
+    approverName: string;
+    approverRole: string;
+    position: number;
+    status: string;
+    color: "RED" | "GRAY" | null;
+    comment: string | null;
+    itemComments: ItemCommentRecord[];
+    actedAt: string | null;
+  }[];
   versions: unknown[];
 }
 
-export type SubmitLogResult = DailyLogRecord | "CONFLICT" | "NO_APPROVERS" | null;
+export type SubmitLogResult = DailyLogRecord | "CONFLICT" | "NO_APPROVERS" | "INVALID" | null;
 
 export interface LogRepository {
   saveDraft(employeeId: string, input: LogDraftInput): Promise<DailyLogRecord>;
@@ -42,12 +64,19 @@ export interface LogRepository {
 const includeLog = {
   employee: { select: { displayName: true, username: true } },
   items: { orderBy: { position: "asc" as const } },
-  approvalSteps: { orderBy: { position: "asc" as const } },
+  approvalSteps: {
+    orderBy: { position: "asc" as const },
+    include: { approver: { select: { displayName: true, username: true, role: true } } }
+  },
   versions: { orderBy: { versionNumber: "asc" as const } }
 };
 
 function formatDate(value: Date) {
   return value.toISOString().slice(0, 10);
+}
+
+function jsonArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
 }
 
 function toRecord(log: Awaited<ReturnType<PrismaLogRepository["load"]>>): DailyLogRecord {
@@ -65,12 +94,19 @@ function toRecord(log: Awaited<ReturnType<PrismaLogRepository["load"]>>): DailyL
       position: item.position,
       content: item.content,
       completed: item.completed,
-      unfinishedReason: item.unfinishedReason
+      unfinishedReason: item.unfinishedReason,
+      images: jsonArray<LogImagePayload>(item.images)
     })),
     approvalSteps: log.approvalSteps.map((step) => ({
       approverId: step.approverId,
+      approverName: step.approver.displayName ?? step.approver.username,
+      approverRole: step.approver.role,
       position: step.position,
-      status: step.status
+      status: step.status,
+      color: step.color === "GREEN" ? null : step.color,
+      comment: step.comment,
+      itemComments: jsonArray<ItemCommentRecord>(step.itemComments),
+      actedAt: step.actedAt?.toISOString() ?? null
     })),
     versions: log.versions.map((version) => version.snapshot)
   };
@@ -105,7 +141,8 @@ export class PrismaLogRepository implements LogRepository {
           position: index + 1,
           content: item.content,
           completed: item.completed,
-          unfinishedReason: item.unfinishedReason || null
+          unfinishedReason: item.unfinishedReason || null,
+          images: item.images
         }))
       });
       return saved.id;
@@ -129,6 +166,13 @@ export class PrismaLogRepository implements LogRepository {
       });
       if (!log || log.employeeId !== employeeId) return null;
       if (!["DRAFT", "RETURNED"].includes(log.status)) return "CONFLICT";
+      const parsedItems = logSubmissionItemsSchema.safeParse(log.items.map((item) => ({
+        content: item.content,
+        completed: item.completed,
+        unfinishedReason: item.unfinishedReason ?? undefined,
+        images: jsonArray<LogImagePayload>(item.images)
+      })));
+      if (!parsedItems.success) return "INVALID";
       const approvers = await transaction.employeeApprover.findMany({
         where: { employeeId, active: true },
         orderBy: { position: "asc" }
@@ -154,7 +198,8 @@ export class PrismaLogRepository implements LogRepository {
             position: item.position,
             content: item.content,
             completed: item.completed,
-            unfinishedReason: item.unfinishedReason
+            unfinishedReason: item.unfinishedReason,
+            images: jsonArray<LogImagePayload>(item.images)
           }))
         }
       });

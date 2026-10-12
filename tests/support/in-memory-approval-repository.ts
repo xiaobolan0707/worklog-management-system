@@ -27,8 +27,12 @@ export class InMemoryApprovalRepository implements ApprovalRepository {
       items: input.items ?? [],
       approvalSteps: input.approverIds.map((approverId, index) => ({
         approverId,
+        approverName: approverId,
+        approverRole: index === 0 ? "LEADER" : "MANAGEMENT",
         position: index + 1,
-        status: "PENDING"
+        status: "PENDING",
+        itemComments: [],
+        actedAt: null
       }))
     });
   }
@@ -37,14 +41,16 @@ export class InMemoryApprovalRepository implements ApprovalRepository {
     return this.logs.get(logId) ?? null;
   }
 
-  async approve(logId: string, leaderId: string, color: "RED" | "GRAY", comment: string): Promise<ApprovalResult> {
+  async approve(logId: string, leaderId: string, color: "RED" | "GRAY", itemComments: { itemPosition: number; comment: string }[]): Promise<ApprovalResult> {
     const log = this.logs.get(logId);
     if (!log) return "NOT_FOUND";
     const current = log.approvalSteps.find((step) => step.status === "PENDING");
     if (!current || current.approverId !== leaderId) return "CONFLICT";
     current.status = "APPROVED";
     current.color = color;
-    current.comment = comment;
+    current.comment = null;
+    current.itemComments = itemComments;
+    current.actedAt = new Date().toISOString();
     log.color = color;
     log.version += 1;
     log.status = log.approvalSteps.some((step) => step.status === "PENDING")
@@ -54,13 +60,15 @@ export class InMemoryApprovalRepository implements ApprovalRepository {
     return log;
   }
 
-  async returnLog(logId: string, leaderId: string, comment: string): Promise<ApprovalResult> {
+  async returnLog(logId: string, leaderId: string, itemComments: { itemPosition: number; comment: string }[]): Promise<ApprovalResult> {
     const log = this.logs.get(logId);
     if (!log) return "NOT_FOUND";
     const current = log.approvalSteps.find((step) => step.status === "PENDING");
     if (!current || current.approverId !== leaderId) return "CONFLICT";
     current.status = "RETURNED";
-    current.comment = comment;
+    current.comment = null;
+    current.itemComments = itemComments;
+    current.actedAt = new Date().toISOString();
     log.status = "RETURNED";
     log.color = "GREEN";
     log.version += 1;

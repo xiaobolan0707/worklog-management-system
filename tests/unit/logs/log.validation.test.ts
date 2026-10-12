@@ -1,35 +1,65 @@
 import { describe, expect, it } from "vitest";
 
-import { logDraftSchema } from "../../../src/modules/logs/log.schemas.js";
+import {
+  logDraftSchema,
+  logSubmissionItemsSchema
+} from "../../../src/modules/logs/log.schemas.js";
+
+const fourItems = [1, 2, 3, 4].map((position) => ({
+  content: `工作事项 ${position}`,
+  completed: true,
+  images: []
+}));
 
 describe("daily log validation", () => {
-  it("rejects empty work items", () => {
-    expect(() =>
-      logDraftSchema.parse({
-        workDate: "2026-10-10",
-        items: [{ content: "   ", completed: true }]
-      })
-    ).toThrow();
+  it("keeps four incomplete rows in a draft but rejects them at submission", () => {
+    const items = [1, 2, 3, 4].map(() => ({ content: "", completed: true, images: [] }));
+    expect(logDraftSchema.parse({ workDate: "2026-10-10", items }).items).toHaveLength(4);
+    expect(() => logSubmissionItemsSchema.parse(items)).toThrow(/content or image/i);
   });
 
   it("requires a reason for every unfinished item", () => {
     expect(() =>
       logDraftSchema.parse({
         workDate: "2026-10-10",
-        items: [{ content: "完成接口联调", completed: false, unfinishedReason: "" }]
+        items: [
+          { content: "完成接口联调", completed: false, unfinishedReason: "", images: [] },
+          ...fourItems.slice(1)
+        ]
       })
     ).toThrow(/unfinished reason/i);
   });
 
-  it("accepts completed and explained unfinished items", () => {
+  it("accepts four valid items and a supported image", () => {
     expect(
-      logDraftSchema.parse({
-        workDate: "2026-10-10",
-        items: [
-          { content: "完成登录页", completed: true },
-          { content: "完成联调", completed: false, unfinishedReason: "等待测试环境" }
-        ]
-      }).items
-    ).toHaveLength(2);
+      logSubmissionItemsSchema.parse([
+        {
+          content: "",
+          completed: true,
+          images: [{
+            id: "image-1",
+            name: "现场.png",
+            type: "image/png",
+            size: 3,
+            dataUrl: "data:image/png;base64,YWJj"
+          }]
+        },
+        ...fourItems.slice(1)
+      ])
+    ).toHaveLength(4);
+  });
+
+  it("rejects unsupported or oversized images and more than six per item", () => {
+    const image = {
+      id: "image-1",
+      name: "现场.gif",
+      type: "image/gif",
+      size: 10 * 1024 * 1024 + 1,
+      dataUrl: "data:image/gif;base64,YWJj"
+    };
+    expect(() => logDraftSchema.parse({
+      workDate: "2026-10-10",
+      items: [{ content: "", completed: true, images: Array(7).fill(image) }, ...fourItems.slice(1)]
+    })).toThrow();
   });
 });

@@ -22,8 +22,10 @@ describe("daily log routes", () => {
       payload: {
         workDate: "2026-10-10",
         items: [
-          { content: "完成日志接口", completed: true },
-          { content: "进行页面联调", completed: false, unfinishedReason: "等待接口" }
+          { content: "完成日志接口", completed: true, images: [] },
+          { content: "进行页面联调", completed: false, unfinishedReason: "等待接口", images: [] },
+          { content: "整理测试数据", completed: true, images: [] },
+          { content: "更新部署说明", completed: true, images: [] }
         ]
       }
     };
@@ -32,7 +34,7 @@ describe("daily log routes", () => {
     expect(first.statusCode).toBe(201);
     expect(second.json().log.id).toBe(first.json().log.id);
     expect(context.logRepository.logs.size).toBe(1);
-    expect(first.json().log.items.map((item: { position: number }) => item.position)).toEqual([1, 2]);
+    expect(first.json().log.items.map((item: { position: number }) => item.position)).toEqual([1, 2, 3, 4]);
 
     const submitted = await context.app.inject({
       method: "POST",
@@ -41,8 +43,16 @@ describe("daily log routes", () => {
     });
     expect(submitted.statusCode).toBe(200);
     expect(submitted.json().log).toMatchObject({ status: "SUBMITTED", color: "GREEN" });
-    expect(submitted.json().log.approvalSteps).toEqual([
-      { approverId: "leader-1", position: 1, status: "PENDING" }
+    expect(submitted.json().log.approvalSteps).toMatchObject([
+      {
+        approverId: "leader-1",
+        approverName: "leader-1",
+        approverRole: "LEADER",
+        position: 1,
+        status: "PENDING",
+        itemComments: [],
+        actedAt: null
+      }
     ]);
   });
 
@@ -52,7 +62,10 @@ describe("daily log routes", () => {
       method: "POST",
       url: "/api/logs/drafts",
       headers: { cookie: owner.cookie, "x-csrf-token": owner.csrfToken },
-      payload: { workDate: "2026-10-10", items: [{ content: "任务", completed: true }] }
+      payload: {
+        workDate: "2026-10-10",
+        items: [1, 2, 3, 4].map((position) => ({ content: `任务 ${position}`, completed: true, images: [] }))
+      }
     });
     const other = await loginAs(context.app, "other");
 

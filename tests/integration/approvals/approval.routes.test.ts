@@ -12,7 +12,14 @@ describe("approval routes", () => {
       id: "secret-log",
       employeeId: "employee-2",
       workDate: "2026-10-10",
-      approverIds: ["other-leader"]
+      approverIds: ["other-leader"],
+      items: [1, 2, 3, 4].map((position) => ({
+        position,
+        content: `工作事项 ${position}`,
+        completed: true,
+        unfinishedReason: null,
+        images: []
+      }))
     });
     const app = await buildApp({
       env: logTestEnv,
@@ -28,7 +35,10 @@ describe("approval routes", () => {
       method: "POST",
       url: "/api/approvals/secret-log/approve",
       headers: { cookie: leader.cookie, "x-csrf-token": leader.csrfToken },
-      payload: { color: "RED", comment: "ok" }
+      payload: {
+        color: "RED",
+        itemComments: [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "ok" }))
+      }
     });
 
     expect(response.statusCode).toBe(403);

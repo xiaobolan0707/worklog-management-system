@@ -28,6 +28,7 @@ export class LogService {
     const result = await this.repository.submitOwnedLog(logId, employeeId);
     if (result === "CONFLICT") throw new LogError(409, "LOG_ALREADY_SUBMITTED", "日志已提交");
     if (result === "NO_APPROVERS") throw new LogError(409, "NO_APPROVERS", "管理员尚未配置审批人");
+    if (result === "INVALID") throw new LogError(400, "INVALID_LOG", "日志至少需要四项有效工作内容");
     if (!result) throw new LogError(403, "LOG_NOT_EDITABLE", "无权提交此日志");
     return result;
   }
