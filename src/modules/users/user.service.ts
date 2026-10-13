@@ -35,6 +35,7 @@ export interface AdministrationRepository {
   listDepartments(): Promise<{ id: string; name: string }[]>;
   createDepartment(name: string): Promise<{ id: string; name: string }>;
   createUser(input: Omit<AdminUserRecord, "id">): Promise<AdminUserRecord>;
+  registerEmployee(input: Omit<AdminUserRecord, "id">): Promise<AdminUserRecord>;
   deleteUser(actorId: string, userId: string): Promise<DeleteUserResult>;
   setUserStatus(userId: string, status: AuthAccountStatus): Promise<AdminUserRecord>;
   resetPassword(userId: string, passwordHash: string, revokedAt: Date): Promise<AdminUserRecord>;
@@ -73,10 +74,7 @@ export class UserService {
 
   async registerEmployee(input: { username: string; displayName: string; password: string }) {
     const username = input.username.trim();
-    if (await this.repository.findUserByUsername(username)) {
-      throw new AdministrationError(409, "USERNAME_EXISTS", "用户名已存在");
-    }
-    const user = await this.repository.createUser({
+    return this.repository.registerEmployee({
       username,
       displayName: input.displayName.trim(),
       passwordHash: await hashPassword(input.password),
@@ -85,15 +83,6 @@ export class UserService {
       departmentId: null,
       mustChangePassword: false
     });
-    await this.repository.appendAudit({
-      actorId: null,
-      subjectUserId: user.id,
-      action: "EMPLOYEE_SELF_REGISTERED",
-      entityType: "User",
-      entityId: user.id,
-      metadata: { username: user.username }
-    });
-    return user;
   }
 
   async createUser(
@@ -242,6 +231,40 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
         mustChangePassword: true
       }
     });
+  }
+
+  async registerEmployee(input: Omit<AdminUserRecord, "id">) {
+    try {
+      return await this.database.$transaction(async (transaction) => {
+        const user = await transaction.user.create({
+          data: input,
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            passwordHash: true,
+            role: true,
+            accountStatus: true,
+            departmentId: true,
+            mustChangePassword: true
+          }
+        });
+        await writeAudit(transaction, {
+          actorId: null,
+          subjectUserId: user.id,
+          action: "EMPLOYEE_SELF_REGISTERED",
+          entityType: "User",
+          entityId: user.id,
+          metadata: { username: user.username }
+        });
+        return user;
+      });
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+        throw new AdministrationError(409, "USERNAME_EXISTS", "用户名已存在");
+      }
+      throw error;
+    }
   }
 
   async deleteUser(actorId: string, userId: string): Promise<DeleteUserResult> {

@@ -1,3 +1,4 @@
+import { AdministrationError } from "../../src/modules/users/user.service.js";
 import type {
   AdministrationRepository,
   AdminUserRecord,
@@ -51,6 +52,13 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
       lockedUntil: null
     });
     return user;
+  }
+
+  async registerEmployee(input: Omit<AdminUserRecord, "id">) {
+    const duplicate = [...this.users.values()].some((user) => user.username === input.username)
+      || [...(this.authRepository?.users.values() ?? [])].some((user) => user.username === input.username);
+    if (duplicate) throw new AdministrationError(409, "USERNAME_EXISTS", "用户名已存在");
+    return this.createUser(input);
   }
 
   async deleteUser(_actorId: string, userId: string) {

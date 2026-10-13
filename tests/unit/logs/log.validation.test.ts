@@ -33,10 +33,14 @@ describe("daily log validation", () => {
 
   it("requires at least twenty non-whitespace characters in every submitted item", () => {
     expect(() => logSubmissionItemsSchema.parse([
-      { content: "不足二十字", completed: true, images: [] },
+      { content: `${"字 ".repeat(19)}\n\t　`, completed: true, images: [] },
       ...fourItems.slice(1)
     ])).toThrow(/20/);
-    expect(logSubmissionItemsSchema.parse(fourItems)).toHaveLength(4);
+    expect(logSubmissionItemsSchema.parse([
+      { content: "字 ".repeat(20), completed: true, images: [] },
+      { content: "😀".repeat(20), completed: true, images: [] },
+      ...fourItems.slice(2)
+    ])).toHaveLength(4);
   });
 
   it("rejects unsupported or oversized images and more than six per item", () => {

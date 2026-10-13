@@ -109,6 +109,40 @@ describe("authentication routes", () => {
     expect(duplicate.json().code).toBe("USERNAME_EXISTS");
   });
 
+  it("rate-limits registration per forwarded client address", async () => {
+    const app = await createApp();
+    const request = (address: string) => app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      headers: { "x-forwarded-for": address },
+      payload: {}
+    });
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect((await request("203.0.113.10")).statusCode).toBe(400);
+    }
+    expect((await request("203.0.113.10")).statusCode).toBe(429);
+    expect((await request("203.0.113.11")).statusCode).toBe(400);
+  });
+
+  it("allows only one of two concurrent registrations for the same username", async () => {
+    const app = await createApp();
+    const payload = {
+      displayName: "并发员工",
+      username: "same.employee",
+      password: "Employee-password-84",
+      confirmPassword: "Employee-password-84"
+    };
+
+    const responses = await Promise.all([
+      app.inject({ method: "POST", url: "/api/auth/register", payload }),
+      app.inject({ method: "POST", url: "/api/auth/register", payload })
+    ]);
+
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([201, 409]);
+    expect(responses.find((response) => response.statusCode === 409)?.json().code).toBe("USERNAME_EXISTS");
+  });
+
   it("rejects a wrong password and records the failed attempt", async () => {
     const app = await createApp();
 

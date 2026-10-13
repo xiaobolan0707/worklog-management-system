@@ -2,6 +2,13 @@ import fp from "fastify-plugin";
 
 export const errorHandlerPlugin = fp(async (app) => {
   app.setErrorHandler((error, request, reply) => {
+    if (typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 429) {
+      return reply.code(429).send({
+        code: "RATE_LIMITED",
+        message: "请求过于频繁，请稍后重试",
+        requestId: request.id
+      });
+    }
     const validation = typeof error === "object" && error !== null && "validation" in error;
     if (validation) {
       return reply.code(400).send({

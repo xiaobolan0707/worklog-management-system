@@ -74,3 +74,49 @@ describe("UserService deletion", () => {
     }));
   });
 });
+
+describe("PrismaAdministrationRepository registration", () => {
+  const input = {
+    username: "new.employee",
+    displayName: "新员工",
+    passwordHash: "hashed-password",
+    role: "EMPLOYEE" as const,
+    accountStatus: "DISABLED" as const,
+    departmentId: null,
+    mustChangePassword: false
+  };
+
+  it("creates the employee and audit event in one transaction", async () => {
+    const user = { id: "employee-2", ...input };
+    const createUser = vi.fn(async () => user);
+    const createAudit = vi.fn(async () => ({}));
+    const transaction = vi.fn(async (callback: (client: unknown) => unknown) => callback({
+      user: { create: createUser },
+      auditEvent: { create: createAudit }
+    }));
+    const repository = new PrismaAdministrationRepository({ $transaction: transaction } as never);
+
+    await expect(repository.registerEmployee(input)).resolves.toEqual(user);
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(createAudit).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        subjectUserId: "employee-2",
+        action: "EMPLOYEE_SELF_REGISTERED",
+        entityId: "employee-2"
+      })
+    });
+  });
+
+  it("maps a concurrent username conflict to USERNAME_EXISTS", async () => {
+    const repository = new PrismaAdministrationRepository({
+      $transaction: async () => {
+        throw { code: "P2002" };
+      }
+    } as never);
+
+    await expect(repository.registerEmployee(input)).rejects.toMatchObject({
+      statusCode: 409,
+      code: "USERNAME_EXISTS"
+    });
+  });
+});
