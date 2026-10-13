@@ -31,6 +31,7 @@ describe("employee worklog pages", () => {
     expect(screen.queryByLabelText(/完成状态/)).not.toBeInTheDocument();
     expect(screen.getByText("员工姓名：张三")).toBeInTheDocument();
     expect(screen.getByText("日志日期：2026-10-12")).toBeInTheDocument();
+    expect(screen.getAllByText("0 / 最少 20 字")).toHaveLength(4);
     await user.click(screen.getByRole("button", { name: /添加工作项/ }));
     expect(onChange).toHaveBeenCalledWith([...emptyItems(), { content: "", completed: true, images: [] }]);
   });
@@ -63,10 +64,10 @@ describe("employee worklog pages", () => {
 
   it("submits four employee work items without employee completion fields", async () => {
     const draftItems = [
-      { content: "进行项目联调", completed: true, images: [] },
-      { content: "整理数据", completed: true, images: [] },
-      { content: "更新文档", completed: true, images: [] },
-      { content: "检查部署", completed: true, images: [] }
+      { content: "今天进行项目接口联调并完成全部异常情况验证工作", completed: true, images: [] },
+      { content: "今天整理项目测试数据并完成全部结果检查确认工作", completed: true, images: [] },
+      { content: "今天更新项目交付文档并补充所有必要操作说明", completed: true, images: [] },
+      { content: "今天检查生产部署流程并确认各项服务运行正常", completed: true, images: [] }
     ];
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
@@ -80,12 +81,13 @@ describe("employee worklog pages", () => {
     render(<AuthProvider><TodayLogPage /></AuthProvider>);
     await screen.findByRole("heading", { name: "今日工作日志" });
     expect(await screen.findByText("员工姓名：张三")).toBeInTheDocument();
-    await user.type(screen.getByLabelText("工作内容 1"), "进行项目联调");
+    await user.type(screen.getByLabelText("工作内容 1"), "内容不足二十字");
     await user.click(screen.getByRole("button", { name: "提交日志" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("请填写第 2 项工作内容或图片");
-    await user.type(screen.getByLabelText("工作内容 2"), "整理数据");
-    await user.type(screen.getByLabelText("工作内容 3"), "更新文档");
-    await user.type(screen.getByLabelText("工作内容 4"), "检查部署");
+    expect(await screen.findByRole("alert")).toHaveTextContent("第 1 项工作内容至少需要填写 20 字");
+    await user.clear(screen.getByLabelText("工作内容 1"));
+    for (const [index, item] of draftItems.entries()) {
+      await user.type(screen.getByLabelText(`工作内容 ${index + 1}`), item.content);
+    }
     await user.click(screen.getByRole("button", { name: "提交日志" }));
     expect(await screen.findByText("已提交")).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));

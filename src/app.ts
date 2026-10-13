@@ -113,7 +113,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(rateLimitPlugin);
   await app.register(authenticatePlugin, { authService });
   await app.register(csrfPlugin);
-  await app.register(authRoutes, { env: options.env, authService });
+  await app.register(authRoutes, { env: options.env, authService, userService });
   await app.register(userRoutes, { userService, approverService, authService });
   await app.register(settingRoutes, { settingService, authService });
   await app.register(logRoutes, { logService, authService });

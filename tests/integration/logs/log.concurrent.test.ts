@@ -12,7 +12,7 @@ describe("concurrent daily log submission", () => {
       headers: { cookie: auth.cookie, "x-csrf-token": auth.csrfToken },
       payload: {
         workDate: "2026-10-10",
-        items: [1, 2, 3, 4].map((position) => ({ content: `完成功能 ${position}`, completed: true, images: [] }))
+        items: [1, 2, 3, 4].map((position) => ({ content: `今天完成第${position}项功能开发并进行了完整测试确认工作`, completed: true, images: [] }))
       }
     });
 

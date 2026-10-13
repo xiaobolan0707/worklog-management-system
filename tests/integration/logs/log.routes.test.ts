@@ -22,10 +22,10 @@ describe("daily log routes", () => {
       payload: {
         workDate: "2026-10-10",
         items: [
-          { content: "完成日志接口", completed: true, images: [] },
-          { content: "进行页面联调", completed: false, unfinishedReason: "等待接口", images: [] },
-          { content: "整理测试数据", completed: true, images: [] },
-          { content: "更新部署说明", completed: true, images: [] }
+          { content: "今天完成日志接口开发并进行了完整测试确认工作", completed: true, images: [] },
+          { content: "今天进行页面联调并记录所有待处理问题与结果", completed: false, unfinishedReason: "等待接口", images: [] },
+          { content: "今天整理全部测试数据并复核最终输出结果无误", completed: true, images: [] },
+          { content: "今天更新生产部署说明并补充完整操作步骤内容", completed: true, images: [] }
         ]
       }
     };

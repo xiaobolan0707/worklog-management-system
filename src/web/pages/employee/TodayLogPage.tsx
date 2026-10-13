@@ -4,6 +4,7 @@ import { apiRequest } from "../../api/client.js";
 import { StatusBadge } from "../../components/StatusBadge.js";
 import { WorkItemEditor, type EditableWorkItem } from "../../components/logs/WorkItemEditor.js";
 import { useAuth } from "../../auth/AuthProvider.js";
+import { effectiveCharacterCount } from "../../../shared/text.js";
 
 interface LogView {
   id: string;
@@ -49,8 +50,9 @@ export function TodayLogPage() {
   }, [items, log]);
 
   function validateForSubmit() {
-    const emptyIndex = items.findIndex((item) => !item.content.trim() && item.images.length === 0);
-    if (items.length < 4 || emptyIndex >= 0) return `请填写第 ${Math.max(0, emptyIndex) + 1} 项工作内容或图片`;
+    if (items.length < 4) return "工作日志至少需要填写 4 项";
+    const shortIndex = items.findIndex((item) => effectiveCharacterCount(item.content) < 20);
+    if (shortIndex >= 0) return `第 ${shortIndex + 1} 项工作内容至少需要填写 20 字`;
     return "";
   }
 

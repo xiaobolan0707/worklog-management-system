@@ -4,6 +4,7 @@ import type {
   LogRepository,
   LogStatusValue
 } from "../../src/modules/logs/log.repository.js";
+import { logSubmissionItemsSchema } from "../../src/modules/logs/log.schemas.js";
 
 export class InMemoryLogRepository implements LogRepository {
   readonly logs = new Map<string, DailyLogRecord>();
@@ -52,6 +53,7 @@ export class InMemoryLogRepository implements LogRepository {
     const log = this.logs.get(logId);
     if (!log || log.employeeId !== employeeId) return null;
     if (!(["DRAFT", "RETURNED"] as LogStatusValue[]).includes(log.status)) return "CONFLICT" as const;
+    if (!logSubmissionItemsSchema.safeParse(log.items).success) return "INVALID" as const;
     const assignments = this.approvers.get(employeeId) ?? [];
     if (assignments.length === 0) return "NO_APPROVERS" as const;
     log.versions.push({ version: log.version, items: structuredClone(log.items) });

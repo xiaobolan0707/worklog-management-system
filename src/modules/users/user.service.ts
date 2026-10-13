@@ -71,6 +71,31 @@ export class UserService {
     return this.repository.listDepartments();
   }
 
+  async registerEmployee(input: { username: string; displayName: string; password: string }) {
+    const username = input.username.trim();
+    if (await this.repository.findUserByUsername(username)) {
+      throw new AdministrationError(409, "USERNAME_EXISTS", "用户名已存在");
+    }
+    const user = await this.repository.createUser({
+      username,
+      displayName: input.displayName.trim(),
+      passwordHash: await hashPassword(input.password),
+      role: "EMPLOYEE",
+      accountStatus: "DISABLED",
+      departmentId: null,
+      mustChangePassword: false
+    });
+    await this.repository.appendAudit({
+      actorId: null,
+      subjectUserId: user.id,
+      action: "EMPLOYEE_SELF_REGISTERED",
+      entityType: "User",
+      entityId: user.id,
+      metadata: { username: user.username }
+    });
+    return user;
+  }
+
   async createUser(
     actorId: string,
     input: {

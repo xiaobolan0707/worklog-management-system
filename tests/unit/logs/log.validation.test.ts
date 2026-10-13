@@ -7,7 +7,7 @@ import {
 } from "../../../src/modules/logs/log.schemas.js";
 
 const fourItems = [1, 2, 3, 4].map((position) => ({
-  content: `工作事项 ${position}`,
+  content: `今天完成第${position}项工作内容并进行了全面检查确认无误`,
   completed: true,
   images: []
 }));
@@ -16,7 +16,7 @@ describe("daily log validation", () => {
   it("keeps four incomplete rows in a draft but rejects them at submission", () => {
     const items = [1, 2, 3, 4].map(() => ({ content: "", completed: true, images: [] }));
     expect(logDraftSchema.parse({ workDate: "2026-10-10", items }).items).toHaveLength(4);
-    expect(() => logSubmissionItemsSchema.parse(items)).toThrow(/content or image/i);
+    expect(() => logSubmissionItemsSchema.parse(items)).toThrow(/20/i);
   });
 
   it("requires a reason for every unfinished item", () => {
@@ -31,23 +31,12 @@ describe("daily log validation", () => {
     ).toThrow(/unfinished reason/i);
   });
 
-  it("accepts four valid items and a supported image", () => {
-    expect(
-      logSubmissionItemsSchema.parse([
-        {
-          content: "",
-          completed: true,
-          images: [{
-            id: "image-1",
-            name: "现场.png",
-            type: "image/png",
-            size: 3,
-            dataUrl: "data:image/png;base64,YWJj"
-          }]
-        },
-        ...fourItems.slice(1)
-      ])
-    ).toHaveLength(4);
+  it("requires at least twenty non-whitespace characters in every submitted item", () => {
+    expect(() => logSubmissionItemsSchema.parse([
+      { content: "不足二十字", completed: true, images: [] },
+      ...fourItems.slice(1)
+    ])).toThrow(/20/);
+    expect(logSubmissionItemsSchema.parse(fourItems)).toHaveLength(4);
   });
 
   it("rejects unsupported or oversized images and more than six per item", () => {

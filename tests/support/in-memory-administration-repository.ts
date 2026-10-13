@@ -22,7 +22,10 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
   constructor(private readonly authRepository?: InMemoryAuthRepository) {}
 
   async findUserByUsername(username: string) {
-    return [...this.users.values()].find((user) => user.username === username && !this.deletedUsers.has(user.id)) ?? null;
+    const user = [...this.users.values()].find((item) => item.username === username && !this.deletedUsers.has(item.id));
+    if (user) return user;
+    const authUser = await this.authRepository?.findUserByUsername(username);
+    return authUser ? { ...authUser, departmentId: null } : null;
   }
 
   async listUsers() {
@@ -42,6 +45,11 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
   async createUser(input: Omit<AdminUserRecord, "id">) {
     const user = { id: `user-${this.users.size + 1}`, ...input };
     this.users.set(user.id, user);
+    this.authRepository?.addUser({
+      ...user,
+      failedLoginCount: 0,
+      lockedUntil: null
+    });
     return user;
   }
 

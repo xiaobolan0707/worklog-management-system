@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { loadEnv } from "../../../src/config/env.js";
 import { hashPassword } from "../../../src/modules/auth/password.js";
+import { InMemoryAdministrationRepository } from "../../support/in-memory-administration-repository.js";
 import { InMemoryAuthRepository } from "../../support/in-memory-auth-repository.js";
 
 const apps: FastifyInstance[] = [];
 let repository: InMemoryAuthRepository;
+let administrationRepository: InMemoryAdministrationRepository;
 
 const env = loadEnv({
   NODE_ENV: "test",
@@ -28,6 +30,7 @@ beforeEach(async () => {
     failedLoginCount: 0,
     lockedUntil: null
   });
+  administrationRepository = new InMemoryAdministrationRepository(repository);
 });
 
 afterEach(async () => {
@@ -35,7 +38,7 @@ afterEach(async () => {
 });
 
 async function createApp() {
-  const app = await buildApp({ env, authRepository: repository });
+  const app = await buildApp({ env, authRepository: repository, administrationRepository });
   apps.push(app);
   return app;
 }
@@ -55,6 +58,57 @@ async function login(app: FastifyInstance, password = "Initial-password-42") {
 }
 
 describe("authentication routes", () => {
+  it("registers a disabled employee account that awaits administrator activation", async () => {
+    const app = await createApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        displayName: "新员工",
+        username: "new.employee",
+        password: "Employee-password-84",
+        confirmPassword: "Employee-password-84"
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(await administrationRepository.findUserByUsername("new.employee")).toMatchObject({
+      displayName: "新员工",
+      role: "EMPLOYEE",
+      accountStatus: "DISABLED",
+      mustChangePassword: false
+    });
+    const loginResponse = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "new.employee", password: "Employee-password-84" }
+    });
+    expect(loginResponse.statusCode).toBe(403);
+    expect(loginResponse.json().code).toBe("ACCOUNT_DISABLED");
+  });
+
+  it("rejects duplicate usernames and mismatched registration passwords", async () => {
+    const app = await createApp();
+    const payload = {
+      displayName: "新员工",
+      username: "employee",
+      password: "Employee-password-84",
+      confirmPassword: "Different-password-84"
+    };
+
+    const mismatch = await app.inject({ method: "POST", url: "/api/auth/register", payload });
+    expect(mismatch.statusCode).toBe(400);
+
+    const duplicate = await app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: { ...payload, confirmPassword: payload.password }
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().code).toBe("USERNAME_EXISTS");
+  });
+
   it("rejects a wrong password and records the failed attempt", async () => {
     const app = await createApp();
 

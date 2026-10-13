@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { effectiveCharacterCount } from "../../shared/text.js";
+
 const imageTypeSchema = z.enum(["image/jpeg", "image/png", "image/webp"]);
 
 export const logImageSchema = z.object({
@@ -42,8 +44,8 @@ export const logDraftSchema = z.object({
 
 export const logSubmissionItemsSchema = z.array(
   logItemSchema.superRefine((item, context) => {
-    if (!item.content && item.images.length === 0) {
-      context.addIssue({ code: "custom", message: "content or image is required" });
+    if (effectiveCharacterCount(item.content) < 20) {
+      context.addIssue({ code: "custom", message: "content must contain at least 20 characters", path: ["content"] });
     }
   })
 ).min(4).max(50);
