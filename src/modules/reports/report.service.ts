@@ -1,4 +1,6 @@
 import type { PrismaClient } from "../../generated/prisma/client.js";
+import { beijingParts, clockMinutes } from "../../shared/beijing-time.js";
+import type { ScheduleSettings } from "../users/user.service.js";
 
 export type PeriodType = "MONTHLY" | "QUARTERLY" | "YEARLY";
 
@@ -57,9 +59,10 @@ export class ReportService {
 }
 
 export class PrismaReportRepository implements ReportRepository {
-  constructor(private readonly database: PrismaClient) {}
+  constructor(private readonly database: PrismaClient, private readonly getSettings: () => Promise<ScheduleSettings>) {}
 
   async listStats(employeeIds: string[] | null, start: string, end: string) {
+    const deadline = clockMinutes((await this.getSettings()).submissionDeadline);
     const logs = await this.database.dailyLog.findMany({
       where: {
         ...(employeeIds === null ? {} : { employeeId: { in: employeeIds } }),
@@ -68,14 +71,20 @@ export class PrismaReportRepository implements ReportRepository {
           lte: new Date(`${end}T00:00:00.000Z`)
         }
       },
-      include: { approvalSteps: true }
+      include: {
+        approvalSteps: true,
+        versions: { select: { createdAt: true }, orderBy: { createdAt: "asc" }, take: 1 }
+      }
     });
-    return logs.map((log) => ({
-      color: log.color === "GREEN" ? null : log.color,
-      submittedOnTime: Boolean(
-        log.submittedAt && log.submittedAt.toISOString().slice(0, 10) === log.workDate.toISOString().slice(0, 10)
-      ),
-      returnCount: log.approvalSteps.filter((step) => step.status === "RETURNED").length
-    }));
+    return logs.map((log) => {
+      const firstSubmission = log.versions[0]?.createdAt ?? log.submittedAt;
+      const submitted = firstSubmission ? beijingParts(firstSubmission) : null;
+      return {
+        color: log.status === "ARCHIVED" && log.color !== "GREEN" ? log.color : null,
+        submittedOnTime: Boolean(submitted &&
+          submitted.date === log.workDate.toISOString().slice(0, 10) && submitted.minutes <= deadline),
+        returnCount: log.approvalSteps.filter((step) => step.status === "RETURNED").length
+      };
+    });
   }
 }

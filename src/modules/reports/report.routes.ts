@@ -15,8 +15,6 @@ const rewardSchema = z.object({
   periodType: z.enum(["MONTHLY", "QUARTERLY", "YEARLY"]),
   periodStart: z.iso.date(),
   periodEnd: z.iso.date(),
-  redCount: z.number().int().min(0),
-  grayCount: z.number().int().min(0),
   note: z.string().trim().max(2000).optional()
 });
 

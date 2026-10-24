@@ -47,6 +47,7 @@ enum ReminderKind {
   APPROVAL_OVERDUE
   LOG_RETURNED
   APPROVAL_COMPLETED
+  COMMENT_REPLY
 }
 
 enum RewardPeriod {
@@ -137,6 +138,8 @@ model DailyLog {
   submissionCount Int            @default(0) @map("submission_count")
   submittedAt     DateTime?      @map("submitted_at")
   archivedAt      DateTime?      @map("archived_at")
+  planTarget      String?        @map("plan_target") @db.VarChar(500)
+  planDueAt       DateTime?      @map("plan_due_at") @db.Timestamptz(3)
   version         Int            @default(0)
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
@@ -198,10 +201,23 @@ model ApprovalStep {
   updatedAt  DateTime       @updatedAt @map("updated_at")
   dailyLog   DailyLog       @relation(fields: [dailyLogId], references: [id], onDelete: Cascade)
   approver   User           @relation("ApprovalActor", fields: [approverId], references: [id], onDelete: Restrict)
+  replies    ItemCommentReply[]
 
   @@unique([dailyLogId, submissionNumber, position])
   @@index([approverId, status])
   @@map("approval_steps")
+}
+
+model ItemCommentReply {
+  id             String       @id @default(cuid())
+  approvalStepId String       @map("approval_step_id")
+  itemPosition   Int          @map("item_position")
+  content        String       @db.Text
+  createdAt      DateTime     @default(now()) @map("created_at")
+  approvalStep   ApprovalStep @relation(fields: [approvalStepId], references: [id], onDelete: Cascade)
+
+  @@index([approvalStepId, itemPosition, createdAt])
+  @@map("item_comment_replies")
 }
 
 model ColorChange {

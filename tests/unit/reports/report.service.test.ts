@@ -2,11 +2,53 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildPeriodStats,
-  periodRange
+  periodRange,
+  PrismaReportRepository
 } from "../../../src/modules/reports/report.service.js";
 import { recommendReward } from "../../../src/modules/reports/reward.service.js";
 
 describe("period reports", () => {
+  it("counts Beijing submissions before the configured deadline as on time", async () => {
+    const repository = new PrismaReportRepository({
+      dailyLog: { findMany: async () => [
+        { workDate: new Date("2026-10-10T00:00:00.000Z"), submittedAt: new Date("2026-10-09T16:30:00.000Z"), status: "ARCHIVED", color: "RED", approvalSteps: [], versions: [] },
+        { workDate: new Date("2026-10-10T00:00:00.000Z"), submittedAt: new Date("2026-10-10T12:00:00.000Z"), status: "ARCHIVED", color: "GRAY", approvalSteps: [], versions: [] }
+      ] }
+    } as never, async () => ({
+      submissionDeadline: "18:00", reminderMinutesBefore: 30,
+      approvalDeadline: "12:00", timezone: "Asia/Shanghai"
+    }));
+    await expect(repository.listStats(null, "2026-10-01", "2026-10-31"))
+      .resolves.toMatchObject([{ submittedOnTime: true }, { submittedOnTime: false }]);
+  });
+
+  it("does not count a first approver's color as the final result", async () => {
+    const repository = new PrismaReportRepository({ dailyLog: { findMany: async () => [{
+      workDate: new Date("2026-10-10T00:00:00.000Z"),
+      submittedAt: new Date("2026-10-10T06:00:00.000Z"),
+      status: "IN_REVIEW", color: "RED", approvalSteps: [], versions: []
+    }] } } as never, async () => ({
+      submissionDeadline: "18:00", reminderMinutesBefore: 30,
+      approvalDeadline: "12:00", timezone: "Asia/Shanghai"
+    }));
+    await expect(repository.listStats(null, "2026-10-01", "2026-10-31"))
+      .resolves.toMatchObject([{ color: null }]);
+  });
+
+  it("keeps an on-time first submission on time after a returned log is resubmitted", async () => {
+    const repository = new PrismaReportRepository({ dailyLog: { findMany: async () => [{
+      workDate: new Date("2026-10-10T00:00:00.000Z"),
+      submittedAt: new Date("2026-10-11T06:00:00.000Z"),
+      versions: [{ createdAt: new Date("2026-10-10T09:00:00.000Z") }],
+      status: "ARCHIVED", color: "RED", approvalSteps: []
+    }] } } as never, async () => ({
+      submissionDeadline: "18:00", reminderMinutesBefore: 30,
+      approvalDeadline: "12:00", timezone: "Asia/Shanghai"
+    }));
+    await expect(repository.listStats(null, "2026-10-01", "2026-10-31"))
+      .resolves.toMatchObject([{ submittedOnTime: true }]);
+  });
+
   it("builds monthly, quarterly, and yearly ranges on Beijing calendar dates", () => {
     expect(periodRange("MONTHLY", "2026-10-10")).toEqual({ start: "2026-10-01", end: "2026-10-31" });
     expect(periodRange("QUARTERLY", "2026-10-10")).toEqual({ start: "2026-10-01", end: "2026-12-31" });

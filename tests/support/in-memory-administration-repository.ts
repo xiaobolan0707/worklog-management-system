@@ -108,6 +108,16 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
   }
 
   async replaceApprovers(employeeId: string, assignments: ApproverAssignmentInput[]) {
+    const employee = this.users.get(employeeId);
+    if (!employee || employee.role !== "EMPLOYEE" || employee.accountStatus !== "ACTIVE") {
+      throw new AdministrationError(400, "INVALID_APPROVER", "审批人必须是启用中的领导账号");
+    }
+    for (const { approverId } of assignments) {
+      const approver = this.users.get(approverId) ?? this.authRepository?.users.get(approverId);
+      if (!approver || !["LEADER", "MANAGEMENT", "ADMIN"].includes(approver.role) || approver.accountStatus !== "ACTIVE") {
+        throw new AdministrationError(400, "INVALID_APPROVER", "审批人必须是启用中的领导账号");
+      }
+    }
     this.approvers.set(employeeId, assignments);
   }
 

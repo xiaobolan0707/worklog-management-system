@@ -133,8 +133,8 @@ export class AuthService {
     if (!(await verifyPassword(currentPassword, authenticated.user.passwordHash))) {
       throw new AuthError(401, "CURRENT_PASSWORD_INVALID", "当前密码错误");
     }
-    if (newPassword.length < 12 || newPassword === currentPassword) {
-      throw new AuthError(400, "PASSWORD_TOO_WEAK", "新密码至少 12 位且不能与初始密码相同");
+    if (newPassword.length < 6 || newPassword === currentPassword) {
+      throw new AuthError(400, "PASSWORD_TOO_WEAK", "新密码至少 6 位且不能与初始密码相同");
     }
 
     await this.repository.updateInitialPassword(

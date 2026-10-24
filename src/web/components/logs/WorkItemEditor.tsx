@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ClipboardEvent } from "react";
 
 import { effectiveCharacterCount } from "../../../shared/text.js";
 import { LetterImages, LetterLog, type LetterImage } from "./LetterLog.js";
@@ -37,7 +37,7 @@ export function WorkItemEditor({
     update(index, { images });
   }
 
-  function addImages(index: number, files: FileList | null) {
+  function addImages(index: number, files: FileList | File[] | null) {
     if (!files?.length) return;
     const existing = items[index]?.images ?? [];
     const selected = [...files];
@@ -59,7 +59,7 @@ export function WorkItemEditor({
       reader.onerror = () => reject(reader.error);
       reader.onload = () => resolve({
         id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${file.name}`,
-        name: file.name,
+        name: file.name || "粘贴图片",
         type: file.type as LetterImage["type"],
         size: file.size,
         dataUrl: String(reader.result)
@@ -68,6 +68,17 @@ export function WorkItemEditor({
     })))
       .then((images) => update(index, { images: [...existing, ...images] }))
       .catch(() => setImageError("图片读取失败，请重新选择"));
+  }
+
+  function pasteImages(index: number, event: ClipboardEvent<HTMLTextAreaElement>) {
+    if (disabled) return;
+    const files = [...event.clipboardData.items]
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file?.type.startsWith("image/")));
+    if (!files.length) return;
+    event.preventDefault();
+    addImages(index, files);
   }
 
   return (
@@ -80,7 +91,7 @@ export function WorkItemEditor({
         renderItem={(item, index) => {
           const characterCount = effectiveCharacterCount(item.content);
           return <div className="work-fields">
-            <label className="field"><span>工作内容</span><textarea aria-label={`工作内容 ${index + 1}`} value={item.content} disabled={disabled} onChange={(event) => update(index, { content: event.target.value })} /></label>
+            <label className="field"><span>工作内容</span><textarea aria-label={`工作内容 ${index + 1}`} value={item.content} disabled={disabled} onChange={(event) => update(index, { content: event.target.value })} onPaste={(event) => pasteImages(index, event)} /></label>
             {!disabled && <small className={characterCount < 20 ? "character-count invalid" : "character-count"}>{characterCount} / 最少 20 字</small>}
             <LetterImages images={item.images} />
             {!disabled && <label className="image-upload"><span>＋ 插入图片</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label={`上传图片 ${index + 1}`} onChange={(event) => addImages(index, event.target.files)} /></label>}

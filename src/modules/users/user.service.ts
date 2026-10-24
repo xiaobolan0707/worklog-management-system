@@ -120,6 +120,9 @@ export class UserService {
   }
 
   async setStatus(actorId: string, userId: string, status: AuthAccountStatus) {
+    if (actorId === userId && status === "DISABLED") {
+      throw new AdministrationError(400, "CANNOT_DISABLE_SELF", "不能停用当前登录的管理员账号");
+    }
     const user = await this.repository.setUserStatus(userId, status);
     await this.repository.appendAudit({
       actorId,
@@ -175,6 +178,24 @@ export class UserService {
 
 export class PrismaAdministrationRepository implements AdministrationRepository {
   constructor(private readonly database: PrismaClient) {}
+
+  private async returnPendingApprovals(transaction: Prisma.TransactionClient, userId: string) {
+    const pendingSteps = await transaction.approvalStep.findMany({
+      where: { approverId: userId, status: "PENDING" },
+      select: { dailyLogId: true },
+      distinct: ["dailyLogId"]
+    });
+    for (const { dailyLogId } of pendingSteps) {
+      await transaction.approvalStep.updateMany({
+        where: { dailyLogId, status: "PENDING" },
+        data: { status: "SUPERSEDED" }
+      });
+      await transaction.dailyLog.updateMany({
+        where: { id: dailyLogId, status: { in: ["SUBMITTED", "IN_REVIEW"] } },
+        data: { status: "RETURNED", color: "GREEN", version: { increment: 1 } }
+      });
+    }
+  }
 
   async findUserByUsername(username: string) {
     return this.database.user.findUnique({
@@ -284,22 +305,7 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
       });
       if (!user) return null;
       const deletedAt = new Date();
-      const pendingSteps = await transaction.approvalStep.findMany({
-        where: { approverId: userId, status: "PENDING" },
-        select: { dailyLogId: true },
-        distinct: ["dailyLogId"]
-      });
-
-      for (const { dailyLogId } of pendingSteps) {
-        await transaction.approvalStep.updateMany({
-          where: { dailyLogId, status: "PENDING" },
-          data: { status: "SUPERSEDED" }
-        });
-        await transaction.dailyLog.updateMany({
-          where: { id: dailyLogId, status: { in: ["SUBMITTED", "IN_REVIEW"] } },
-          data: { status: "RETURNED", color: "GREEN", version: { increment: 1 } }
-        });
-      }
+      await this.returnPendingApprovals(transaction, userId);
 
       await transaction.employeeApprover.deleteMany({
         where: { OR: [{ employeeId: userId }, { approverId: userId }] }
@@ -329,19 +335,19 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
   }
 
   async setUserStatus(userId: string, accountStatus: AuthAccountStatus) {
-    return this.database.user.update({
-      where: { id: userId },
-      data: { accountStatus },
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        passwordHash: true,
-        role: true,
-        accountStatus: true,
-        departmentId: true,
-        mustChangePassword: true
+    return this.database.$transaction(async (transaction) => {
+      if (accountStatus === "DISABLED") {
+        await this.returnPendingApprovals(transaction, userId);
+        await transaction.employeeApprover.deleteMany({ where: { approverId: userId } });
       }
+      return transaction.user.update({
+        where: { id: userId },
+        data: { accountStatus },
+        select: {
+          id: true, username: true, displayName: true, passwordHash: true, role: true,
+          accountStatus: true, departmentId: true, mustChangePassword: true
+        }
+      });
     });
   }
 
@@ -371,6 +377,20 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
 
   async replaceApprovers(employeeId: string, assignments: ApproverAssignmentInput[]) {
     await this.database.$transaction(async (transaction) => {
+      const employee = await transaction.user.findFirst({
+        where: { id: employeeId, role: "EMPLOYEE", accountStatus: "ACTIVE", deletedAt: null },
+        select: { id: true }
+      });
+      const approvers = await transaction.user.count({
+        where: {
+          id: { in: assignments.map(({ approverId }) => approverId) },
+          role: { in: ["LEADER", "MANAGEMENT", "ADMIN"] },
+          accountStatus: "ACTIVE", deletedAt: null
+        }
+      });
+      if (!employee || approvers !== assignments.length) {
+        throw new AdministrationError(400, "INVALID_APPROVER", "审批人必须是启用中的领导账号");
+      }
       await transaction.employeeApprover.deleteMany({ where: { employeeId } });
       if (assignments.length > 0) {
         await transaction.employeeApprover.createMany({

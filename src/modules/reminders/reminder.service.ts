@@ -6,7 +6,8 @@ export type ReminderKindValue =
   | "APPROVAL_ASSIGNED"
   | "APPROVAL_OVERDUE"
   | "LOG_RETURNED"
-  | "APPROVAL_COMPLETED";
+  | "APPROVAL_COMPLETED"
+  | "COMMENT_REPLY";
 
 export interface ReminderInput {
   recipientId: string;
@@ -136,10 +137,20 @@ export class PrismaReminderRepository implements ReminderRepository {
   async listOverdueApprovalLeaderIds(workDate: string) {
     const date = new Date(`${workDate}T00:00:00.000Z`);
     const steps = await this.database.approvalStep.findMany({
-      where: { status: "PENDING", dailyLog: { workDate: date } },
-      select: { approverId: true },
-      distinct: ["approverId"]
+      where: { status: "PENDING", dailyLog: { workDate: { lt: date }, status: { in: ["SUBMITTED", "IN_REVIEW"] } } },
+      select: {
+        approverId: true, dailyLogId: true, position: true, submissionNumber: true,
+        dailyLog: { select: { submissionCount: true } }
+      },
+      orderBy: [{ dailyLogId: "asc" }, { position: "asc" }]
     });
-    return steps.map((step) => step.approverId);
+    const currentLogs = new Set<string>();
+    const leaders = new Set<string>();
+    for (const step of steps) {
+      if (step.submissionNumber !== step.dailyLog.submissionCount || currentLogs.has(step.dailyLogId)) continue;
+      currentLogs.add(step.dailyLogId);
+      leaders.add(step.approverId);
+    }
+    return [...leaders];
   }
 }

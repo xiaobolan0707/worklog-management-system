@@ -58,9 +58,9 @@
 
 **Interfaces:** `LetterLog` 增加 `planTarget?: string | null`、`planDueAt?: string | null`、`planRating?: "MET" | "DELAYED" | "UNMET" | null` 与 `timeline?: TimelineEvent[]`（`submissionNumber`, `actorName`, `action`, `actedAt`）；员工草稿表单提供日期/时间选择与目标输入，领导审批表单提供三选一星级。`storageKey(userId: string, workDate: string): string`，避免共用浏览器切换账号泄露草稿。
 
-- [ ] **Step 1: 写失败测试。**`employee_edits_plan_and_submits` 断言日期/目标随草稿保存、缺项出现字段错误、提交后只读；`leader_reviews_full_letter` 断言完整四项及计划可见、初始三颗星无色、确认审批无星被阻止、退回无星可提交；`timeline_displays_beijing_seconds` 断言每轮/每级按 `YYYY-MM-DD HH:mm:ss` 显示；`employee_sees_new_review_within_five_seconds` 用假时钟断言页面打开状态下审批结果 5 秒内刷新；`letter_footer_survives_print_and_narrow_width` 断言页脚内容存在且打印样式未隐藏。
+- [ ] **Step 1: 写失败测试。**`employee_edits_plan_and_submits` 断言日期/目标随草稿保存、缺项出现字段错误、提交后只读；`employee_scrolls_recent_seven_plans` 断言默认今天、滚轮切换、范围固定为最近 7 天且首尾不锁页面；`leader_reviews_full_letter` 断言完整四项及计划可见、初始三颗星无色、确认审批无星被阻止、退回无星可提交；`timeline_displays_beijing_seconds` 断言每轮/每级按 `YYYY-MM-DD HH:mm:ss` 显示；`employee_sees_new_review_within_five_seconds` 用假时钟断言页面打开状态下审批结果 5 秒内刷新；`letter_footer_survives_print_and_narrow_width` 断言页脚内容存在且打印样式未隐藏。
 - [ ] **Step 2: 验证测试先失败。**运行 `pnpm vitest run tests/unit/web/employee-pages.test.tsx tests/unit/web/leader-admin-pages.test.tsx`。
-- [ ] **Step 3: 最小实现。**延伸现有 `LetterLog` 布局与 CSS；不新建第二套信纸；让今日、历史、审批和详情共用展示；审批人返回时不强制选星。员工历史/详情页可见时每 5 秒重新拉取当前日志，卸载时清理定时器。
+- [ ] **Step 3: 最小实现。**延伸现有 `LetterLog` 布局与 CSS；不新建第二套信纸；让今日、历史、审批和详情共用展示；审批人返回时不强制选星。员工今日日志页复用本人日志数据，滚轮、日期按钮和前后按钮浏览最近 7 天（含今天）的计划，默认定位今天且首尾释放页面滚动。员工历史/详情页可见时每 5 秒重新拉取当前日志，卸载时清理定时器。
 - [ ] **Step 4: 验证通过。**运行聚焦单测、`pnpm typecheck`、相关 Playwright 用例（若浏览器可用）。
 - [ ] **Step 5: 提交。**提交 `feat: show work plan and stars on letter logs`。
 

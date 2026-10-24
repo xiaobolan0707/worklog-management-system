@@ -24,7 +24,7 @@ describe("leader and administrator pages",()=>{
     expect(screen.getByRole("radio",{name:"灰色：未完成"})).toBeInTheDocument();
     expect(screen.getByText("员工姓名：张三")).toBeInTheDocument();
     expect(screen.queryByText("employee-1")).not.toBeInTheDocument();
-    expect(screen.getByText("当天或次日核查，只选择红色完成或灰色未完成。")).toBeInTheDocument();
+    expect(screen.getByText("日志当天起三天内核查，只选择红色完成或灰色未完成。")).toBeInTheDocument();
     expect(screen.queryByText(/score|分数|评分/i)).not.toBeInTheDocument();
     for(const position of [1,2,3,4])await user.type(screen.getByLabelText(`事项 ${position} 批注`),`事项 ${position} 已核查`);
     await user.click(screen.getByRole("button",{name:"确认核查"}));
@@ -110,5 +110,37 @@ describe("leader and administrator pages",()=>{
       expect.objectContaining({method:"DELETE"})
     ));
     expect(screen.queryByText("待删除用户")).not.toBeInTheDocument();
+  });
+
+  it("allows six-character initial passwords in user management",async()=>{
+    vi.spyOn(globalThis,"fetch").mockImplementation(async(input)=>{
+      const url=String(input);
+      if(url.endsWith("/api/admin/departments"))return new Response(JSON.stringify({departments:[]}),{status:200});
+      if(url.endsWith("/api/admin/users"))return new Response(JSON.stringify({users:[]}),{status:200});
+      return new Response(null,{status:404});
+    });
+
+    render(<UsersPage/>);
+
+    expect(await screen.findByLabelText("初始密码")).toHaveAttribute("minlength","6");
+    expect(screen.getByLabelText("新初始密码")).toHaveAttribute("minlength","6");
+  });
+
+  it("enables password reset when the new password has six characters",async()=>{
+    vi.spyOn(globalThis,"fetch").mockImplementation(async(input)=>{
+      const url=String(input);
+      if(url.endsWith("/api/admin/departments"))return new Response(JSON.stringify({departments:[]}),{status:200});
+      if(url.endsWith("/api/admin/users"))return new Response(JSON.stringify({users:[
+        {id:"user-1",username:"employee",displayName:"员工",role:"EMPLOYEE",accountStatus:"ACTIVE"}
+      ]}),{status:200});
+      return new Response(null,{status:404});
+    });
+    const user=userEvent.setup();
+
+    render(<UsersPage/>);
+    await user.selectOptions(await screen.findByLabelText("选择用户"),"user-1");
+    await user.type(screen.getByLabelText("新初始密码"),"123456");
+
+    expect(screen.getByRole("button",{name:"重置密码"})).toBeEnabled();
   });
 });

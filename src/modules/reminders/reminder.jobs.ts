@@ -1,39 +1,19 @@
 import type { ScheduleSettings } from "../users/user.service.js";
 import type { ReminderRepository, ReminderService } from "./reminder.service.js";
-
-function beijingParts(now: Date) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23"
-  }).formatToParts(now);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return {
-    date: `${values["year"]}-${values["month"]}-${values["day"]}`,
-    minutes: Number(values["hour"]) * 60 + Number(values["minute"])
-  };
-}
-
-function clockMinutes(value: string) {
-  const [hour = "0", minute = "0"] = value.split(":");
-  return Number(hour) * 60 + Number(minute);
-}
+import { beijingParts, clockMinutes } from "../../shared/beijing-time.js";
 
 export class ReminderJobs {
   constructor(
     private readonly service: ReminderService,
     private readonly repository: ReminderRepository,
-    private readonly settings: ScheduleSettings
+    private readonly getSettings: () => Promise<ScheduleSettings>
   ) {}
 
   async runSubmissionReminderJob(now: Date) {
     const current = beijingParts(now);
-    const deadline = clockMinutes(this.settings.submissionDeadline);
-    const warning = deadline - this.settings.reminderMinutesBefore;
+    const settings = await this.getSettings();
+    const deadline = clockMinutes(settings.submissionDeadline);
+    const warning = deadline - settings.reminderMinutesBefore;
     const missing = await this.repository.listMissingEmployeeIds(current.date);
 
     if (current.minutes >= deadline) {
@@ -62,7 +42,7 @@ export class ReminderJobs {
       );
     }
 
-    if (current.minutes >= clockMinutes(this.settings.approvalDeadline)) {
+    if (current.minutes >= clockMinutes(settings.approvalDeadline)) {
       const leaders = await this.repository.listOverdueApprovalLeaderIds(current.date);
       await Promise.all(
         leaders.map((recipientId) =>

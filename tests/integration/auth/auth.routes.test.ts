@@ -67,8 +67,8 @@ describe("authentication routes", () => {
       payload: {
         displayName: "新员工",
         username: "new.employee",
-        password: "Employee-password-84",
-        confirmPassword: "Employee-password-84"
+        password: "123456",
+        confirmPassword: "123456"
       }
     });
 
@@ -82,10 +82,27 @@ describe("authentication routes", () => {
     const loginResponse = await app.inject({
       method: "POST",
       url: "/api/auth/login",
-      payload: { username: "new.employee", password: "Employee-password-84" }
+      payload: { username: "new.employee", password: "123456" }
     });
     expect(loginResponse.statusCode).toBe(403);
     expect(loginResponse.json().code).toBe("ACCOUNT_DISABLED");
+  });
+
+  it("rejects employee registration passwords shorter than six characters", async () => {
+    const app = await createApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      payload: {
+        displayName: "新员工",
+        username: "new.employee",
+        password: "12345",
+        confirmPassword: "12345"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
   });
 
   it("rejects duplicate usernames and mismatched registration passwords", async () => {
@@ -189,7 +206,7 @@ describe("authentication routes", () => {
       method: "POST",
       url: "/api/auth/change-initial-password",
       headers: { cookie, "x-csrf-token": csrfToken },
-      payload: { currentPassword: "Initial-password-42", newPassword: "New-password-84" }
+      payload: { currentPassword: "Initial-password-42", newPassword: "654321" }
     });
     expect(changed.statusCode).toBe(200);
 

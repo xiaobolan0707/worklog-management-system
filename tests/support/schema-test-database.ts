@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
 import { PGlite } from "@electric-sql/pglite";
@@ -12,11 +12,14 @@ type Row = Record<string, unknown>;
 
 export async function createSchemaTestDatabase() {
   const database = new PGlite();
-  const migration = await readFile(
-    new URL("../../prisma/migrations/20261010170000_initial/migration.sql", import.meta.url),
-    "utf8"
-  );
-  await database.exec(migration);
+  const migrations = new URL("../../prisma/migrations/", import.meta.url);
+  const directories = (await readdir(migrations, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  for (const directory of directories) {
+    await database.exec(await readFile(new URL(`${directory}/migration.sql`, migrations), "utf8"));
+  }
 
   async function sql<T extends Row[] = Row[]>(
     strings: TemplateStringsArray,

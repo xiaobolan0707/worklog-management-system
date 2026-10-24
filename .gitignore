@@ -9,4 +9,8 @@ playwright-report/
 test-results/
 *.log
 .worktrees/
+work/
+*.tar.gz
+*.zip
+员工工作日志管理系统-源码-*/
 

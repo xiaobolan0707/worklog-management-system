@@ -85,8 +85,8 @@ export class ApprovalService {
       throw new ApprovalError(403, "NOT_CURRENT_APPROVER", "尚未轮到您审批此日志");
     }
     const reviewDayOffset = calendarDayDifference(log.workDate, beijingDate(this.now()));
-    if (reviewDayOffset < 0 || reviewDayOffset > 1) {
-      throw new ApprovalError(409, "APPROVAL_DATE_EXPIRED", "核查时间仅限日志当天或次日");
+    if (reviewDayOffset < 0 || reviewDayOffset > 2) {
+      throw new ApprovalError(409, "APPROVAL_DATE_EXPIRED", "核查时间仅限日志当天起三天内");
     }
     return log;
   }

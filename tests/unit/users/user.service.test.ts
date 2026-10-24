@@ -6,6 +6,32 @@ import {
 } from "../../../src/modules/users/user.service.js";
 
 describe("UserService deletion", () => {
+  it("returns pending logs and removes approval assignments when a leader is disabled", async () => {
+    const returned: string[] = [];
+    const assignments: string[] = [];
+    const repository = new PrismaAdministrationRepository({
+      $transaction: async (callback: (client: unknown) => unknown) => callback({
+        approvalStep: {
+          findMany: async () => [{ dailyLogId: "log-1" }],
+          updateMany: async () => ({ count: 1 })
+        },
+        dailyLog: { updateMany: async ({ data }: { data: { status: string } }) => {
+          returned.push(data.status);
+          return { count: 1 };
+        } },
+        employeeApprover: { deleteMany: async ({ where }: { where: { approverId: string } }) => {
+          assignments.push(where.approverId);
+          return { count: 1 };
+        } },
+        user: { update: async () => ({ id: "leader-1", accountStatus: "DISABLED" }) }
+      })
+    } as never);
+    await expect(repository.setUserStatus("leader-1", "DISABLED"))
+      .resolves.toMatchObject({ accountStatus: "DISABLED" });
+    expect(returned).toEqual(["RETURNED"]);
+    expect(assignments).toEqual(["leader-1"]);
+  });
+
   it("prevents an administrator from deleting their own account", async () => {
     const deleteUser = vi.fn();
     const service = new UserService({ deleteUser } as never);

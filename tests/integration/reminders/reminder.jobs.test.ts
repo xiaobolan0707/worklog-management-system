@@ -9,12 +9,12 @@ describe("submission reminder job", () => {
     const repository = new InMemoryReminderRepository();
     repository.missingEmployeeIds = ["employee-1"];
     repository.overdueApprovalLeaderIds = ["leader-1"];
-    const jobs = new ReminderJobs(new ReminderService(repository), repository, {
+    const jobs = new ReminderJobs(new ReminderService(repository), repository, async () => ({
       submissionDeadline: "18:00",
       reminderMinutesBefore: 30,
       approvalDeadline: "12:00",
       timezone: "Asia/Shanghai"
-    });
+    }));
 
     await jobs.runSubmissionReminderJob(new Date("2026-10-10T09:30:00.000Z"));
     await jobs.runSubmissionReminderJob(new Date("2026-10-10T10:01:00.000Z"));
@@ -36,11 +36,25 @@ describe("submission reminder job", () => {
       timezone: "Asia/Shanghai" as const
     };
 
-    await new ReminderJobs(new ReminderService(repository), repository, settings)
+    await new ReminderJobs(new ReminderService(repository), repository, async () => settings)
       .runSubmissionReminderJob(new Date("2026-10-10T09:30:00.000Z"));
-    await new ReminderJobs(new ReminderService(repository), repository, settings)
+    await new ReminderJobs(new ReminderService(repository), repository, async () => settings)
       .runSubmissionReminderJob(new Date("2026-10-10T09:30:00.000Z"));
 
     expect(repository.reminders).toHaveLength(1);
+  });
+
+  it("uses schedule changes without restarting the application", async () => {
+    const repository = new InMemoryReminderRepository();
+    repository.missingEmployeeIds = ["employee-1"];
+    let deadline = "18:00";
+    const jobs = new ReminderJobs(new ReminderService(repository), repository, async () => ({
+      submissionDeadline: deadline, reminderMinutesBefore: 30,
+      approvalDeadline: "12:00", timezone: "Asia/Shanghai"
+    }));
+    await jobs.runSubmissionReminderJob(new Date("2026-10-10T08:30:00.000Z"));
+    deadline = "17:00";
+    await jobs.runSubmissionReminderJob(new Date("2026-10-10T08:30:00.000Z"));
+    expect(repository.reminders.map((item) => item.kind)).toEqual(["LOG_DUE"]);
   });
 });

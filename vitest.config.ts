@@ -4,6 +4,6 @@ export default defineConfig({
   test: {
     environment: "node",
     restoreMocks: true,
-    exclude: ["tests/e2e/**", "**/node_modules/**", "**/.git/**"]
+    include: ["tests/{unit,integration,infra}/**/*.test.{ts,tsx}"]
   }
 });

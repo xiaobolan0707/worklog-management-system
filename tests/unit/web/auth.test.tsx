@@ -27,10 +27,12 @@ describe("authentication UI", () => {
     render(<LoginPage onLogin={vi.fn()} />);
 
     await user.click(screen.getByRole("button", { name: "员工注册" }));
+    expect(screen.getByLabelText("密码")).toHaveAttribute("minlength", "6");
+    expect(screen.getByLabelText("确认密码")).toHaveAttribute("minlength", "6");
     await user.type(screen.getByLabelText("姓名"), "新员工");
     await user.type(screen.getByLabelText("用户名"), "new.employee");
-    await user.type(screen.getByLabelText("密码"), "Employee-password-84");
-    await user.type(screen.getByLabelText("确认密码"), "Employee-password-84");
+    await user.type(screen.getByLabelText("密码"), "123456");
+    await user.type(screen.getByLabelText("确认密码"), "123456");
     await user.click(screen.getByRole("button", { name: "提交注册" }));
 
     expect(await screen.findByText("注册成功，请等待管理员启用账号。" )).toBeInTheDocument();
@@ -55,10 +57,12 @@ describe("authentication UI", () => {
     const onChange = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<ChangeInitialPasswordPage onChange={onChange} />);
+    expect(screen.getByLabelText("新密码")).toHaveAttribute("minlength", "6");
+    expect(screen.getByText("新密码至少 6 位，保存后即可进入工作台。")).toBeInTheDocument();
     await user.type(screen.getByLabelText("初始密码"), "Initial-password-42");
-    await user.type(screen.getByLabelText("新密码"), "New-password-84");
+    await user.type(screen.getByLabelText("新密码"), "654321");
     await user.click(screen.getByRole("button", { name: "保存新密码" }));
-    expect(onChange).toHaveBeenCalledWith("Initial-password-42", "New-password-84");
+    expect(onChange).toHaveBeenCalledWith("Initial-password-42", "654321");
   });
 
   it("shows only employee navigation and supports logout", async () => {

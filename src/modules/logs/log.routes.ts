@@ -6,6 +6,16 @@ import { LogError, type LogService } from "./log.service.js";
 import { logDraftSchema } from "./log.schemas.js";
 
 const idParams = z.object({ id: z.string().min(1).max(191) });
+const replySchema = z.object({
+  stepId: z.string().min(1).max(191),
+  itemPosition: z.number().int().min(1).max(50),
+  content: z.string().trim().min(1).max(1000)
+});
+const listQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+  search: z.string().trim().max(100).default("")
+});
 const logBodyLimit = 70 * 1024 * 1024;
 
 export interface LogRoutesOptions {
@@ -70,9 +80,26 @@ export const logRoutes: FastifyPluginAsync<LogRoutesOptions> = async (app, optio
     }
   });
 
-  app.get("/api/logs/mine", { preHandler: employeeOnly }, async (request) => ({
-    logs: await options.logService.listMine(request.authenticated!.user.id)
-  }));
+  app.get("/api/logs/mine", { preHandler: employeeOnly }, async (request, reply) => {
+    try { return await options.logService.listMine(request.authenticated!.user.id, listQuery.parse(request.query)); }
+    catch (error) { return sendLogError(reply, error); }
+  });
+
+  app.post("/api/logs/:id/replies", { preHandler: employeeOnly }, async (request, reply) => {
+    try {
+      options.authService.verifyCsrf(
+        request.authenticated!, request.headers["x-csrf-token"] as string | undefined
+      );
+      const { id } = idParams.parse(request.params);
+      const { stepId, itemPosition, content } = replySchema.parse(request.body);
+      const log = await options.logService.replyToComment(
+        id, request.authenticated!.user.id, stepId, itemPosition, content
+      );
+      return reply.code(201).send({ log });
+    } catch (error) {
+      return sendLogError(reply, error);
+    }
+  });
 
   app.get("/api/logs/:id", { preHandler: app.requireUser }, async (request, reply) => {
     try {
@@ -85,7 +112,7 @@ export const logRoutes: FastifyPluginAsync<LogRoutesOptions> = async (app, optio
 
   app.get("/api/logs", { preHandler: app.requireUser }, async (request, reply) => {
     try {
-      return { logs: await options.logService.listVisible(request.authenticated!.user) };
+      return await options.logService.listVisible(request.authenticated!.user, listQuery.parse(request.query));
     } catch (error) {
       return sendLogError(reply, error);
     }

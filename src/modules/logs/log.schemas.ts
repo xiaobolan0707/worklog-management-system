@@ -39,6 +39,8 @@ const logItemSchema = z
 
 export const logDraftSchema = z.object({
   workDate: z.iso.date(),
+  planTarget: z.string().trim().max(500).nullable().optional(),
+  planDueAt: z.iso.datetime({ offset: true }).nullable().optional(),
   items: z.array(logItemSchema).min(4).max(50)
 });
 

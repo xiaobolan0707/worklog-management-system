@@ -52,6 +52,20 @@ describe("production database schema", () => {
     ).rejects.toThrow(/unique|duplicate/i);
   });
 
+  it("stores a work plan deadline with the production migration", async () => {
+    const database = await setup();
+    await database.sql`
+      INSERT INTO daily_logs (id, employee_id, work_date, status, plan_target, plan_due_at, updated_at)
+      VALUES ('log-plan', 'employee-1', '2026-10-16', 'DRAFT', '完成周报', '2026-10-16T18:00:00+08:00', CURRENT_TIMESTAMP)
+    `;
+
+    const rows = await database.sql<{ plan_target: string; plan_due_at: Date }[]>`
+      SELECT plan_target, plan_due_at FROM daily_logs WHERE id = 'log-plan'
+    `;
+    expect(rows[0]?.plan_target).toBe("完成周报");
+    expect(new Date(rows[0]!.plan_due_at).toISOString()).toBe("2026-10-16T10:00:00.000Z");
+  });
+
   it("keeps approver positions and approvers unique for each employee", async () => {
     const database = await setup();
     await database.sql`
@@ -80,6 +94,34 @@ describe("production database schema", () => {
         VALUES ('reminder-2', 'employee-1', 'LOG_DUE', '2026-10-10', '提醒', '请提交日志')
       `
     ).rejects.toThrow(/unique|duplicate/i);
+  });
+
+  it("stores a comment reply and its leader reminder with the production migration", async () => {
+    const database = await setup();
+    await database.sql`
+      INSERT INTO daily_logs (id, employee_id, work_date, updated_at)
+      VALUES ('log-reply', 'employee-1', '2026-10-22', CURRENT_TIMESTAMP)
+    `;
+    await database.sql`
+      INSERT INTO approval_steps (id, daily_log_id, approver_id, position, updated_at)
+      VALUES ('step-reply', 'log-reply', 'leader-1', 1, CURRENT_TIMESTAMP)
+    `;
+    await database.sql`
+      INSERT INTO item_comment_replies (id, approval_step_id, item_position, content)
+      VALUES ('reply-1', 'step-reply', 1, '测试通过')
+    `;
+    await database.sql`
+      INSERT INTO reminders (id, recipient_id, kind, deduplication_key, title, body, related_log_id)
+      VALUES ('reply-reminder', 'leader-1', 'COMMENT_REPLY', 'reply-1', '员工回复', '请查收', 'log-reply')
+    `;
+    const replies = await database.sql<{ content: string }[]>`
+      SELECT content FROM item_comment_replies WHERE approval_step_id = 'step-reply'
+    `;
+    expect(replies).toEqual([{ content: "测试通过" }]);
+    const reminders = await database.sql<{ kind: string }[]>`
+      SELECT kind FROM reminders WHERE id = 'reply-reminder'
+    `;
+    expect(reminders).toEqual([{ kind: "COMMENT_REPLY" }]);
   });
 
   it("appends audit events and prevents later mutation", async () => {

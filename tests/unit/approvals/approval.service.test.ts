@@ -106,7 +106,7 @@ describe("ApprovalService", () => {
     expect(repository.audits.filter((event) => event.action === "LOG_APPROVED")).toHaveLength(2);
   });
 
-  it("allows review on the work date or following day and rejects later review", async () => {
+  it("allows review within three calendar days of the work date and rejects later review", async () => {
     const current = setup();
     const comments = [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "x" }));
     await expect(
@@ -118,7 +118,12 @@ describe("ApprovalService", () => {
       followingDay.service.approveCurrentStep("log-1", "leader-1", "RED", [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "次日核查完成" })))
     ).resolves.toMatchObject({ color: "RED" });
 
-    const late = setup("2026-10-09", "2026-10-11T04:00:00.000Z");
+    const thirdDay = setup("2026-10-09", "2026-10-11T15:59:59.000Z");
+    await expect(
+      thirdDay.service.approveCurrentStep("log-1", "leader-1", "RED", comments)
+    ).resolves.toMatchObject({ color: "RED" });
+
+    const late = setup("2026-10-09", "2026-10-11T16:00:00.000Z");
     await expect(
       late.service.approveCurrentStep("log-1", "leader-1", "RED", [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "x" })))
     ).rejects.toMatchObject({ code: "APPROVAL_DATE_EXPIRED" });

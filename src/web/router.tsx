@@ -42,6 +42,7 @@ export function AppRouter() {
         <Route path="*" element={<Navigate to={homes[auth.user.role]} replace />} />
         <Route path="/employee/today" element={<TodayLogPage />} />
         <Route path="/employee/history" element={<HistoryPage />} />
+        <Route path="/employee/logs/:id" element={<LogDetailPage backTo="/employee/history" />} />
         <Route path="/employee/stats" element={<EmployeeStatsPage />} />
         <Route path="/leader/approvals" element={<ApprovalPage/>}/><Route path="/leader/logs" element={<LogSearchPage/>}/><Route path="/leader/logs/:id" element={<LogDetailPage/>}/><Route path="/reports/departments" element={<DashboardPage/>}/><Route path="/management" element={<DashboardPage/>}/><Route path="/management/rewards" element={<RewardsPage/>}/><Route path="/admin/users" element={<UsersPage/>}/><Route path="/admin/departments" element={<DepartmentsPage/>}/><Route path="/admin/approvers" element={<ApproversPage/>}/><Route path="/admin/settings" element={<SettingsPage/>}/><Route path="/admin/audit" element={<AuditPage/>}/>
       </Routes>

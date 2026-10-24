@@ -19,6 +19,26 @@ describe("daily log validation", () => {
     expect(() => logSubmissionItemsSchema.parse(items)).toThrow(/20/i);
   });
 
+  it("accepts an optional work plan and rejects invalid plan values", () => {
+    const parsed = logDraftSchema.parse({
+      workDate: "2026-10-16",
+      items: fourItems,
+      planTarget: "完成客户资料整理",
+      planDueAt: "2026-10-16T10:00:00.000Z"
+    });
+
+    expect(parsed).toMatchObject({
+      planTarget: "完成客户资料整理",
+      planDueAt: "2026-10-16T10:00:00.000Z"
+    });
+    expect(() => logDraftSchema.parse({
+      workDate: "2026-10-16",
+      items: fourItems,
+      planTarget: "字".repeat(501),
+      planDueAt: "not-a-date"
+    })).toThrow();
+  });
+
   it("requires a reason for every unfinished item", () => {
     expect(() =>
       logDraftSchema.parse({

@@ -14,8 +14,8 @@ const loginSchema = z.object({
 const registrationSchema = z.object({
   displayName: z.string().trim().min(1).max(100),
   username: z.string().trim().min(2).max(64).regex(/^[a-zA-Z0-9._-]+$/),
-  password: z.string().min(12).max(256),
-  confirmPassword: z.string().min(12).max(256)
+  password: z.string().min(6).max(256),
+  confirmPassword: z.string().min(6).max(256)
 }).refine((input) => input.password === input.confirmPassword, {
   message: "两次输入的密码不一致",
   path: ["confirmPassword"]
@@ -23,7 +23,7 @@ const registrationSchema = z.object({
 
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1).max(256),
-  newPassword: z.string().min(12).max(256)
+  newPassword: z.string().min(6).max(256)
 });
 
 export interface AuthRoutesOptions {

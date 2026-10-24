@@ -75,8 +75,8 @@ export function LoginPage({ onLogin }: { onLogin(username: string, password: str
           <form onSubmit={register}>
             <label className="field"><span>姓名</span><input name="displayName" autoComplete="name" maxLength={100} required /></label>
             <label className="field"><span>用户名</span><input name="username" autoComplete="username" minLength={2} maxLength={64} pattern="[a-zA-Z0-9._-]+" required /></label>
-            <label className="field"><span>密码</span><input name="password" type="password" autoComplete="new-password" minLength={12} required /></label>
-            <label className="field"><span>确认密码</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} required /></label>
+            <label className="field"><span>密码</span><input name="password" type="password" autoComplete="new-password" minLength={6} required /></label>
+            <label className="field"><span>确认密码</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={6} required /></label>
             {error && <p className="form-error" role="alert">{error}</p>}
             <button className="btn primary wide" disabled={busy}>{busy ? "注册中…" : "提交注册"}</button>
             <button type="button" className="btn secondary wide" onClick={() => switchMode(false)}>返回登录</button>

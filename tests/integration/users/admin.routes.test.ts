@@ -66,6 +66,41 @@ async function credentials(app: FastifyInstance, username: string, password: str
 }
 
 describe("administrator organization routes", () => {
+  it("does not let the only active administrator disable their own account", async () => {
+    const app = await createApp();
+    const auth = await credentials(app, "admin", "Admin-password-42");
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/admin/users/admin-1/status",
+      headers: { cookie: auth.cookie, "x-csrf-token": auth.csrfToken },
+      payload: { accountStatus: "DISABLED" }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(authRepository.users.get("admin-1")?.accountStatus).toBe("ACTIVE");
+  });
+
+  it("rejects an employee or disabled leader in an approval chain", async () => {
+    const app = await createApp();
+    const auth = await credentials(app, "admin", "Admin-password-42");
+    const employee = await administrationRepository.createUser({
+      username: "employee", displayName: "员工", passwordHash: "hidden", role: "EMPLOYEE",
+      accountStatus: "ACTIVE", departmentId: null, mustChangePassword: false
+    });
+    const disabledLeader = await administrationRepository.createUser({
+      username: "disabled", displayName: "停用领导", passwordHash: "hidden", role: "LEADER",
+      accountStatus: "DISABLED", departmentId: null, mustChangePassword: false
+    });
+    for (const approverId of [employee.id, disabledLeader.id]) {
+      const response = await app.inject({
+        method: "PUT", url: `/api/admin/users/${employee.id}/approvers`,
+        headers: { cookie: auth.cookie, "x-csrf-token": auth.csrfToken },
+        payload: { approverIds: [approverId] }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(administrationRepository.approvers.has(employee.id)).toBe(false);
+    }
+  });
+
   it("lists users and departments for usable administration screens", async () => {
     const app = await createApp();
     const auth = await credentials(app, "admin", "Admin-password-42");
@@ -114,6 +149,63 @@ describe("administrator organization routes", () => {
     const duplicate = await app.inject(request);
     expect(duplicate.statusCode).toBe(409);
     expect(duplicate.json().code).toBe("USERNAME_EXISTS");
+  });
+
+  it("accepts six-character initial passwords for every role and rejects shorter ones", async () => {
+    const app = await createApp();
+    const auth = await credentials(app, "admin", "Admin-password-42");
+
+    for (const role of ["EMPLOYEE", "LEADER", "MANAGEMENT", "ADMIN"] as const) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/admin/users",
+        headers: { cookie: auth.cookie, "x-csrf-token": auth.csrfToken },
+        payload: {
+          username: `${role.toLowerCase()}2`,
+          displayName: role,
+          initialPassword: "123456",
+          role
+        }
+      });
+      expect(response.statusCode).toBe(201);
+    }
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/api/admin/users",
+      headers: { cookie: auth.cookie, "x-csrf-token": auth.csrfToken },
+      payload: {
+        username: "short-password",
+        displayName: "短密码",
+        initialPassword: "12345",
+        role: "EMPLOYEE"
+      }
+    });
+    expect(rejected.statusCode).toBe(400);
+  });
+
+  it("resets passwords at the six-character boundary", async () => {
+    const app = await createApp();
+    const auth = await credentials(app, "admin", "Admin-password-42");
+    const target = await administrationRepository.createUser({
+      username: "employee",
+      displayName: "张三",
+      passwordHash: await hashPassword("Old-password-42"),
+      role: "EMPLOYEE",
+      accountStatus: "ACTIVE",
+      departmentId: null,
+      mustChangePassword: false
+    });
+    const request = (initialPassword: string) => app.inject({
+      method: "POST",
+      url: `/api/admin/users/${target.id}/reset-password`,
+      headers: { cookie: auth.cookie, "x-csrf-token": auth.csrfToken },
+      payload: { initialPassword }
+    });
+
+    expect((await request("12345")).statusCode).toBe(400);
+    expect((await request("123456")).statusCode).toBe(200);
+    await expect(verifyPassword("123456", administrationRepository.users.get(target.id)!.passwordHash)).resolves.toBe(true);
   });
 
   it("prevents a leader from administering accounts", async () => {

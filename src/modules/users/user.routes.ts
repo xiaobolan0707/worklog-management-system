@@ -14,13 +14,13 @@ const idParams = z.object({ id: z.string().min(1).max(191) });
 const userSchema = z.object({
   username: z.string().trim().min(2).max(64).regex(/^[a-zA-Z0-9._-]+$/),
   displayName: z.string().trim().min(1).max(100).optional(),
-  initialPassword: z.string().min(12).max(256),
+  initialPassword: z.string().min(6).max(256),
   role: z.enum(["EMPLOYEE", "LEADER", "MANAGEMENT", "ADMIN"]),
   departmentId: z.string().min(1).max(191).nullable().optional()
 });
 const departmentSchema = z.object({ name: z.string().trim().min(1).max(100) });
 const statusSchema = z.object({ accountStatus: z.enum(["ACTIVE", "DISABLED"]) });
-const resetSchema = z.object({ initialPassword: z.string().min(12).max(256) });
+const resetSchema = z.object({ initialPassword: z.string().min(6).max(256) });
 const approverSchema = z.object({ approverIds: z.array(z.string().min(1).max(191)).max(10) });
 
 export interface UserRoutesOptions {

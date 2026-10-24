@@ -20,10 +20,10 @@ export function ChangeInitialPasswordPage({
       <section className="panel password-panel">
         <p className="eyebrow">ACCOUNT SECURITY</p>
         <h1>首次登录，请设置新密码</h1>
-        <p className="muted">新密码至少 12 位，保存后即可进入工作台。</p>
+        <p className="muted">新密码至少 6 位，保存后即可进入工作台。</p>
         <form onSubmit={submit}>
           <label className="field"><span>初始密码</span><input name="currentPassword" type="password" required /></label>
-          <label className="field"><span>新密码</span><input name="newPassword" type="password" minLength={12} required /></label>
+          <label className="field"><span>新密码</span><input name="newPassword" type="password" minLength={6} required /></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="btn primary wide">保存新密码</button>
         </form>

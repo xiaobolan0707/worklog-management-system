@@ -6,6 +6,7 @@ import { hashPassword } from "../../src/modules/auth/password.js";
 import { InMemoryAdministrationRepository } from "./in-memory-administration-repository.js";
 import { InMemoryAuthRepository } from "./in-memory-auth-repository.js";
 import { InMemoryLogRepository } from "./in-memory-log-repository.js";
+import { InMemoryReminderRepository } from "./in-memory-reminder-repository.js";
 
 export const logTestEnv = loadEnv({
   NODE_ENV: "test",
@@ -32,15 +33,17 @@ export async function createLogTestContext() {
   }
   const administrationRepository = new InMemoryAdministrationRepository(authRepository);
   administrationRepository.approvers.set("employee-1", [{ approverId: "leader-1", position: 1 }]);
-  const logRepository = new InMemoryLogRepository();
+  const reminderRepository = new InMemoryReminderRepository();
+  const logRepository = new InMemoryLogRepository(reminderRepository);
   logRepository.approvers.set("employee-1", [{ approverId: "leader-1", position: 1 }]);
   const app = await buildApp({
     env: logTestEnv,
     authRepository,
     administrationRepository,
-    logRepository
+    logRepository,
+    reminderRepository
   });
-  return { app, authRepository, administrationRepository, logRepository };
+  return { app, authRepository, administrationRepository, logRepository, reminderRepository };
 }
 
 export async function loginAs(app: FastifyInstance, username: string) {

@@ -1,6 +1,6 @@
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import { appendAudit, type AuditInput } from "../audit/audit.repository.js";
-import type { PeriodType } from "./report.service.js";
+import { periodRange, type PeriodType, type ReportService } from "./report.service.js";
 
 export function recommendReward(counts: { redCount: number; grayCount: number }) {
   return counts.grayCount > 0 && counts.grayCount >= counts.redCount ? "IMPROVEMENT" as const : "REWARD" as const;
@@ -11,14 +11,12 @@ export interface RewardInput {
   periodType: PeriodType;
   periodStart: string;
   periodEnd: string;
-  redCount: number;
-  grayCount: number;
   note?: string | undefined;
 }
 
 export interface RewardRepository {
   canConfirm(actorId: string, employeeId: string): Promise<boolean>;
-  saveDecision(input: RewardInput & { decidedById: string; outcome: "REWARD" | "IMPROVEMENT" }): Promise<unknown>;
+  saveDecision(input: RewardInput & { decidedById: string; redCount: number; grayCount: number; outcome: "REWARD" | "IMPROVEMENT" }): Promise<unknown>;
   appendAudit(input: AuditInput): Promise<void>;
 }
 
@@ -29,21 +27,28 @@ export class RewardError extends Error {
 }
 
 export class RewardService {
-  constructor(private readonly repository: RewardRepository) {}
+  constructor(private readonly repository: RewardRepository, private readonly reports: ReportService) {}
 
   async confirm(actorId: string, input: RewardInput) {
     if (!(await this.repository.canConfirm(actorId, input.employeeId))) {
       throw new RewardError(403, "FORBIDDEN", "无权确认该员工的奖惩结果");
     }
-    const outcome = recommendReward(input);
-    const decision = await this.repository.saveDecision({ ...input, decidedById: actorId, outcome });
+    const range = periodRange(input.periodType, input.periodStart);
+    if (input.periodStart !== range.start || input.periodEnd !== range.end) {
+      throw new RewardError(400, "INVALID_PERIOD", "统计周期与起止日期不一致");
+    }
+    const { redCount, grayCount } = await this.reports.buildPeriodStats(
+      [input.employeeId], input.periodType, input.periodStart
+    );
+    const outcome = recommendReward({ redCount, grayCount });
+    const decision = await this.repository.saveDecision({ ...input, redCount, grayCount, decidedById: actorId, outcome });
     await this.repository.appendAudit({
       actorId,
       subjectUserId: input.employeeId,
       action: "REWARD_DECISION_CONFIRMED",
       entityType: "RewardDecision",
       entityId: `${input.employeeId}:${input.periodType}:${input.periodStart}`,
-      metadata: { outcome, redCount: input.redCount, grayCount: input.grayCount }
+      metadata: { outcome, redCount, grayCount }
     });
     return decision;
   }
@@ -60,7 +65,7 @@ export class PrismaRewardRepository implements RewardRepository {
     }));
   }
 
-  saveDecision(input: RewardInput & { decidedById: string; outcome: "REWARD" | "IMPROVEMENT" }) {
+  saveDecision(input: RewardInput & { decidedById: string; redCount: number; grayCount: number; outcome: "REWARD" | "IMPROVEMENT" }) {
     return this.database.rewardDecision.upsert({
       where: {
         employeeId_periodType_periodStart_periodEnd: {

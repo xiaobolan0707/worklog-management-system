@@ -82,7 +82,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const logRepository = options.logRepository ?? new PrismaLogRepository(database!);
   const approvalRepository = options.approvalRepository ?? new PrismaApprovalRepository(database!);
   const reminderRepository = options.reminderRepository ?? new PrismaReminderRepository(database!);
-  const reportRepository = options.reportRepository ?? new PrismaReportRepository(database!);
+  const reportRepository = options.reportRepository ?? new PrismaReportRepository(database!, () => settingService.get());
   const rewardRepository = options.rewardRepository ?? new PrismaRewardRepository(database!);
   const auditQueryRepository = options.auditQueryRepository ?? new PrismaAuditQueryRepository(database!);
   const authService = new AuthService(authRepository);
@@ -93,17 +93,9 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const approvalService = new ApprovalService(approvalRepository);
   const reminderService = new ReminderService(reminderRepository);
   const reportService = new ReportService(reportRepository);
-  const rewardService = new RewardService(rewardRepository);
+  const rewardService = new RewardService(rewardRepository, reportService);
   const auditService = new AuditService(auditQueryRepository);
-  const reminderSettings = options.env.NODE_ENV === "production"
-    ? await settingService.get()
-    : {
-        submissionDeadline: "18:00",
-        reminderMinutesBefore: 30,
-        approvalDeadline: "12:00",
-        timezone: "Asia/Shanghai" as const
-      };
-  const reminderJobs = new ReminderJobs(reminderService, reminderRepository, reminderSettings);
+  const reminderJobs = new ReminderJobs(reminderService, reminderRepository, () => settingService.get());
 
   if (database) {
     app.addHook("onClose", async () => database.$disconnect());

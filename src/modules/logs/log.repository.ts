@@ -1,4 +1,4 @@
-import type { PrismaClient } from "../../generated/prisma/client.js";
+import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
 import { appendAudit } from "../audit/audit.repository.js";
 import { logSubmissionItemsSchema, type LogImagePayload } from "./log.schemas.js";
 
@@ -7,6 +7,8 @@ export type LogColorValue = "GREEN" | "RED" | "GRAY";
 
 export interface LogDraftInput {
   workDate: string;
+  planTarget?: string | null | undefined;
+  planDueAt?: string | null | undefined;
   items: {
     content: string;
     completed: boolean;
@@ -20,6 +22,13 @@ export interface ItemCommentRecord {
   comment: string;
 }
 
+export interface ItemCommentReplyRecord {
+  id: string;
+  itemPosition: number;
+  content: string;
+  createdAt: string;
+}
+
 export interface DailyLogRecord {
   id: string;
   employeeId: string;
@@ -29,6 +38,8 @@ export interface DailyLogRecord {
   color: LogColorValue | null;
   version: number;
   submissionCount: number;
+  planTarget: string | null;
+  planDueAt: string | null;
   items: {
     position: number;
     content: string;
@@ -37,6 +48,8 @@ export interface DailyLogRecord {
     images: LogImagePayload[];
   }[];
   approvalSteps: {
+    id: string;
+    submissionNumber?: number;
     approverId: string;
     approverName: string;
     approverRole: string;
@@ -45,6 +58,7 @@ export interface DailyLogRecord {
     color: "RED" | "GRAY" | null;
     comment: string | null;
     itemComments: ItemCommentRecord[];
+    replies: ItemCommentReplyRecord[];
     actedAt: string | null;
   }[];
   versions: unknown[];
@@ -52,13 +66,26 @@ export interface DailyLogRecord {
 
 export type SubmitLogResult = DailyLogRecord | "CONFLICT" | "NO_APPROVERS" | "INVALID" | null;
 
+export interface LogListQuery { page: number; pageSize: number; search: string }
+export interface LogSummary {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  workDate: string;
+  status: LogStatusValue;
+  color: LogColorValue | null;
+  planTarget: string | null;
+  planDueAt: string | null;
+}
+export interface LogListResult { logs: LogSummary[]; total: number; page: number; pageSize: number }
+
 export interface LogRepository {
   saveDraft(employeeId: string, input: LogDraftInput): Promise<DailyLogRecord>;
   updateOwnedDraft(logId: string, employeeId: string, input: LogDraftInput): Promise<DailyLogRecord | null>;
   submitOwnedLog(logId: string, employeeId: string): Promise<SubmitLogResult>;
   findById(logId: string): Promise<DailyLogRecord | null>;
-  listMine(employeeId: string): Promise<DailyLogRecord[]>;
-  listScoped(employeeIds: string[] | null): Promise<DailyLogRecord[]>;
+  addCommentReply(logId: string, employeeId: string, stepId: string, itemPosition: number, content: string): Promise<DailyLogRecord | null>;
+  listScoped(employeeIds: string[] | null, query: LogListQuery): Promise<LogListResult>;
 }
 
 const includeLog = {
@@ -66,10 +93,19 @@ const includeLog = {
   items: { orderBy: { position: "asc" as const } },
   approvalSteps: {
     orderBy: { position: "asc" as const },
-    include: { approver: { select: { displayName: true, username: true, role: true } } }
+    include: {
+      approver: { select: { displayName: true, username: true, role: true } },
+      replies: { orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }] }
+    }
   },
   versions: { orderBy: { versionNumber: "asc" as const } }
 };
+
+const selectSummary = {
+  id: true, employeeId: true, workDate: true, status: true, color: true,
+  planTarget: true, planDueAt: true,
+  employee: { select: { displayName: true, username: true } }
+} as const;
 
 function formatDate(value: Date) {
   return value.toISOString().slice(0, 10);
@@ -90,6 +126,8 @@ function toRecord(log: Awaited<ReturnType<PrismaLogRepository["load"]>>): DailyL
     color: log.color,
     version: log.version,
     submissionCount: log.submissionCount,
+    planTarget: log.planTarget,
+    planDueAt: log.planDueAt?.toISOString() ?? null,
     items: log.items.map((item) => ({
       position: item.position,
       content: item.content,
@@ -98,6 +136,8 @@ function toRecord(log: Awaited<ReturnType<PrismaLogRepository["load"]>>): DailyL
       images: jsonArray<LogImagePayload>(item.images)
     })),
     approvalSteps: log.approvalSteps.map((step) => ({
+      id: step.id,
+      submissionNumber: step.submissionNumber,
       approverId: step.approverId,
       approverName: step.approver.displayName ?? step.approver.username,
       approverRole: step.approver.role,
@@ -106,6 +146,10 @@ function toRecord(log: Awaited<ReturnType<PrismaLogRepository["load"]>>): DailyL
       color: step.color === "GREEN" ? null : step.color,
       comment: step.comment,
       itemComments: jsonArray<ItemCommentRecord>(step.itemComments),
+      replies: step.replies.map((reply) => ({
+        id: reply.id, itemPosition: reply.itemPosition,
+        content: reply.content, createdAt: reply.createdAt.toISOString()
+      })),
       actedAt: step.actedAt?.toISOString() ?? null
     })),
     versions: log.versions.map((version) => version.snapshot)
@@ -131,9 +175,22 @@ export class PrismaLogRepository implements LogRepository {
       const saved = existing
         ? await transaction.dailyLog.update({
             where: { id: existing.id },
-            data: { version: { increment: 1 } }
+            data: {
+              ...(input.planTarget !== undefined ? { planTarget: input.planTarget || null } : {}),
+              ...(input.planDueAt !== undefined
+                ? { planDueAt: input.planDueAt ? new Date(input.planDueAt) : null }
+                : {}),
+              version: { increment: 1 }
+            }
           })
-        : await transaction.dailyLog.create({ data: { employeeId, workDate } });
+        : await transaction.dailyLog.create({
+            data: {
+              employeeId,
+              workDate,
+              planTarget: input.planTarget || null,
+              planDueAt: input.planDueAt ? new Date(input.planDueAt) : null
+            }
+          });
       await transaction.logItem.deleteMany({ where: { dailyLogId: saved.id } });
       await transaction.logItem.createMany({
         data: input.items.map((item, index) => ({
@@ -229,21 +286,62 @@ export class PrismaLogRepository implements LogRepository {
     return log ? toRecord(log) : null;
   }
 
-  async listMine(employeeId: string) {
-    const logs = await this.database.dailyLog.findMany({
-      where: { employeeId },
-      orderBy: { workDate: "desc" },
-      include: includeLog
+  async addCommentReply(logId: string, employeeId: string, stepId: string, itemPosition: number, content: string) {
+    const created = await this.database.$transaction(async (transaction) => {
+      const step = await transaction.approvalStep.findFirst({
+        where: { id: stepId, dailyLogId: logId, dailyLog: { employeeId } },
+        select: { approverId: true, itemComments: true, status: true }
+      });
+      if (!step || !["APPROVED", "RETURNED", "SUPERSEDED"].includes(step.status) ||
+        !jsonArray<ItemCommentRecord>(step.itemComments).some((item) => item.itemPosition === itemPosition)) return false;
+      const reply = await transaction.itemCommentReply.create({
+        data: { approvalStepId: stepId, itemPosition, content }
+      });
+      await transaction.reminder.create({
+        data: {
+          recipientId: step.approverId, kind: "COMMENT_REPLY", deduplicationKey: reply.id,
+          title: "员工回复了您的批注", body: `员工回复了第 ${itemPosition} 项工作的批注。`, relatedLogId: logId
+        }
+      });
+      await appendAudit(transaction, {
+        actorId: employeeId, subjectUserId: employeeId, action: "COMMENT_REPLIED",
+        entityType: "ItemCommentReply", entityId: reply.id,
+        metadata: { logId, stepId, itemPosition }
+      });
+      return true;
     });
-    return logs.map(toRecord);
+    return created ? this.findById(logId) : null;
   }
 
-  async listScoped(employeeIds: string[] | null) {
+  async listScoped(employeeIds: string[] | null, query: LogListQuery): Promise<LogListResult> {
+    const search = query.search.trim();
+    const searchDate = /^\d{4}-\d{2}-\d{2}$/.test(search) ? new Date(`${search}T00:00:00.000Z`) : null;
+    const where: Prisma.DailyLogWhereInput = {
+      ...(employeeIds === null ? {} : { employeeId: { in: employeeIds } }),
+      ...(search ? { OR: [
+        { employeeId: search },
+        { employee: { is: { username: { contains: search, mode: "insensitive" } } } },
+        { employee: { is: { displayName: { contains: search, mode: "insensitive" } } } },
+        ...(searchDate && !Number.isNaN(searchDate.getTime()) && searchDate.toISOString().slice(0, 10) === search
+          ? [{ workDate: searchDate }] : [])
+      ] } : {})
+    };
     const logs = await this.database.dailyLog.findMany({
-      where: employeeIds === null ? {} : { employeeId: { in: employeeIds } },
-      orderBy: { workDate: "desc" },
-      include: includeLog
+      where,
+      orderBy: [{ workDate: "desc" }, { id: "desc" }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+      select: selectSummary
     });
-    return logs.map(toRecord);
+    const total = await this.database.dailyLog.count({ where });
+    return {
+      logs: logs.map((log) => ({
+        id: log.id, employeeId: log.employeeId,
+        employeeName: log.employee.displayName ?? log.employee.username,
+        workDate: formatDate(log.workDate), status: log.status, color: log.color,
+        planTarget: log.planTarget, planDueAt: log.planDueAt?.toISOString() ?? null
+      })),
+      total, page: query.page, pageSize: query.pageSize
+    };
   }
 }
