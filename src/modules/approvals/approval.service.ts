@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
+import { lockPersonnelActivity } from "../../shared/personnel-lock.js";
 import { appendAudit } from "../audit/audit.repository.js";
 import type { ItemCommentRecord } from "../logs/log.repository.js";
 import type { LogImagePayload } from "../logs/log.schemas.js";
@@ -20,6 +21,8 @@ export interface ApprovalLogRecord {
   employeeId: string;
   employeeName: string;
   workDate: string;
+  isBackfill: boolean;
+  submittedAt: string | null;
   status: string;
   color: "GREEN" | "RED" | "GRAY" | null;
   version: number;
@@ -54,27 +57,9 @@ export class ApprovalError extends Error {
   }
 }
 
-function beijingDate(date: Date): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(date);
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value["year"]}-${value["month"]}-${value["day"]}`;
-}
-
-function calendarDayDifference(fromDate: string, toDate: string): number {
-  const millisecondsPerDay = 24 * 60 * 60 * 1000;
-  return (Date.parse(`${toDate}T00:00:00.000Z`) - Date.parse(`${fromDate}T00:00:00.000Z`)) /
-    millisecondsPerDay;
-}
-
 export class ApprovalService {
   constructor(
-    private readonly repository: ApprovalRepository,
-    private readonly now: () => Date = () => new Date()
+    private readonly repository: ApprovalRepository
   ) {}
 
   private async assertCurrent(logId: string, leaderId: string) {
@@ -83,10 +68,6 @@ export class ApprovalService {
     const current = log.approvalSteps.find((step) => step.status === "PENDING");
     if (!current || current.approverId !== leaderId) {
       throw new ApprovalError(403, "NOT_CURRENT_APPROVER", "尚未轮到您审批此日志");
-    }
-    const reviewDayOffset = calendarDayDifference(log.workDate, beijingDate(this.now()));
-    if (reviewDayOffset < 0 || reviewDayOffset > 2) {
-      throw new ApprovalError(409, "APPROVAL_DATE_EXPIRED", "核查时间仅限日志当天起三天内");
     }
     return log;
   }
@@ -170,9 +151,15 @@ function jsonArray<T>(value: unknown): T[] {
 export class PrismaApprovalRepository implements ApprovalRepository {
   constructor(private readonly database: PrismaClient) {}
 
+  private async activeApprover(transaction: Prisma.TransactionClient, id: string) {
+    await lockPersonnelActivity(transaction);
+    const actor = await transaction.user.findFirst({ where: { id, role: { in: ["LEADER", "MANAGEMENT", "ADMIN"] }, employmentStatus: "ACTIVE", accountStatus: "ACTIVE", recycledAt: null, archivePurgingAt: null, archivePurgedAt: null, deletedAt: null }, select: { id: true } });
+    if (!actor) throw new ApprovalError(403, "APPROVER_UNAVAILABLE", "离职或停用后不能进行审批操作");
+  }
+
   async findApprovalLog(logId: string) {
     const log = await this.database.dailyLog.findUnique({
-      where: { id: logId },
+      where: { id: logId, employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } },
       include: {
         employee: { select: { displayName: true, username: true } },
         items: { orderBy: { position: "asc" } },
@@ -189,6 +176,8 @@ export class PrismaApprovalRepository implements ApprovalRepository {
       employeeId: log.employeeId,
       employeeName: log.employee.displayName ?? log.employee.username,
       workDate: dateText(log.workDate),
+      isBackfill: log.isBackfill,
+      submittedAt: log.submittedAt?.toISOString() ?? null,
       status: log.status,
       color: log.color,
       version: log.version,
@@ -215,8 +204,9 @@ export class PrismaApprovalRepository implements ApprovalRepository {
 
   async approve(logId: string, leaderId: string, color: "RED" | "GRAY", itemComments: ItemCommentRecord[]) {
     return this.database.$transaction(async (transaction): Promise<ApprovalResult> => {
+      await this.activeApprover(transaction, leaderId);
       const log = await transaction.dailyLog.findUnique({
-        where: { id: logId },
+        where: { id: logId, employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } },
         include: { approvalSteps: { orderBy: { position: "asc" } } }
       });
       if (!log) return "NOT_FOUND";
@@ -224,7 +214,7 @@ export class PrismaApprovalRepository implements ApprovalRepository {
       const current = steps.find((step) => step.status === "PENDING");
       if (!current || current.approverId !== leaderId) return "CONFLICT";
       const updated = await transaction.approvalStep.updateMany({
-        where: { id: current.id, status: "PENDING" },
+        where: { id: current.id, status: "PENDING", approverId: leaderId },
         data: {
           status: "APPROVED",
           color,
@@ -259,8 +249,9 @@ export class PrismaApprovalRepository implements ApprovalRepository {
 
   async returnLog(logId: string, leaderId: string, itemComments: ItemCommentRecord[]) {
     return this.database.$transaction(async (transaction): Promise<ApprovalResult> => {
+      await this.activeApprover(transaction, leaderId);
       const log = await transaction.dailyLog.findUnique({
-        where: { id: logId },
+        where: { id: logId, employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } },
         include: { approvalSteps: { orderBy: { position: "asc" } } }
       });
       if (!log) return "NOT_FOUND";
@@ -269,7 +260,7 @@ export class PrismaApprovalRepository implements ApprovalRepository {
       );
       if (!current || current.approverId !== leaderId) return "CONFLICT";
       const changed = await transaction.approvalStep.updateMany({
-        where: { id: current.id, status: "PENDING" },
+        where: { id: current.id, status: "PENDING", approverId: leaderId },
         data: {
           status: "RETURNED",
           comment: null,
@@ -287,7 +278,7 @@ export class PrismaApprovalRepository implements ApprovalRepository {
         data: { status: "SUPERSEDED" }
       });
       await transaction.dailyLog.update({
-        where: { id: logId },
+        where: { id: logId, employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } },
         data: { status: "RETURNED", color: "GREEN", version: { increment: 1 } }
       });
       await appendAudit(transaction, {
@@ -304,8 +295,9 @@ export class PrismaApprovalRepository implements ApprovalRepository {
 
   async changeColor(logId: string, leaderId: string, color: "RED" | "GRAY", reason: string) {
     return this.database.$transaction(async (transaction) => {
+      await this.activeApprover(transaction, leaderId);
       const log = await transaction.dailyLog.findUnique({
-        where: { id: logId },
+        where: { id: logId, employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } },
         include: { approvalSteps: true }
       });
       if (!log || log.status !== "ARCHIVED") return null;
@@ -313,7 +305,7 @@ export class PrismaApprovalRepository implements ApprovalRepository {
       const fromColor = log.color;
       if (fromColor !== "RED" && fromColor !== "GRAY") return null;
       await transaction.dailyLog.update({
-        where: { id: logId },
+        where: { id: logId, employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } },
         data: { color, version: { increment: 1 } }
       });
       await transaction.colorChange.create({
@@ -333,7 +325,7 @@ export class PrismaApprovalRepository implements ApprovalRepository {
 
   async listPending(leaderId: string) {
     const steps = await this.database.approvalStep.findMany({
-      where: { approverId: leaderId, status: "PENDING" },
+      where: { approverId: leaderId, status: "PENDING", dailyLog: { employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } } },
       include: { dailyLog: true },
       orderBy: [{ dailyLog: { workDate: "asc" } }, { position: "asc" }]
     });

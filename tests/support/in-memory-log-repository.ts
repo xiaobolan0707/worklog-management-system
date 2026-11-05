@@ -35,6 +35,8 @@ export class InMemoryLogRepository implements LogRepository {
       color: null,
       version: 0,
       submissionCount: 0,
+      isBackfill: false,
+      backfillReason: null,
       planTarget: input.planTarget || null,
       planDueAt: input.planDueAt ?? null,
       items: input.items.map((item, index) => ({ ...item, position: index + 1 })),
@@ -58,7 +60,7 @@ export class InMemoryLogRepository implements LogRepository {
     return log;
   }
 
-  async submitOwnedLog(logId: string, employeeId: string) {
+  async submitOwnedLog(logId: string, employeeId: string, backfillReason?: string) {
     const log = this.logs.get(logId);
     if (!log || log.employeeId !== employeeId) return null;
     if (!(["DRAFT", "RETURNED"] as LogStatusValue[]).includes(log.status)) return "CONFLICT" as const;
@@ -67,6 +69,7 @@ export class InMemoryLogRepository implements LogRepository {
     if (assignments.length === 0) return "NO_APPROVERS" as const;
     log.versions.push({ version: log.version, items: structuredClone(log.items) });
     log.status = "SUBMITTED";
+    if (backfillReason) { log.isBackfill = true; log.backfillReason = backfillReason; }
     log.color = "GREEN";
     log.submissionCount += 1;
     log.version += 1;
@@ -112,7 +115,7 @@ export class InMemoryLogRepository implements LogRepository {
     return {
       logs: matches.slice((query.page - 1) * query.pageSize, query.page * query.pageSize).map((log) => ({
         id: log.id, employeeId: log.employeeId, employeeName: log.employeeName,
-        workDate: log.workDate, status: log.status, color: log.color,
+        workDate: log.workDate, status: log.status, color: log.color, isBackfill: log.isBackfill,
         planTarget: log.planTarget, planDueAt: log.planDueAt
       })),
       total: matches.length, page: query.page, pageSize: query.pageSize

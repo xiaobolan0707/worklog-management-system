@@ -2,7 +2,8 @@ export interface SessionUser {
   id: string;
   username: string;
   displayName: string | null;
-  role: "EMPLOYEE" | "LEADER" | "MANAGEMENT" | "ADMIN";
+  role: "EMPLOYEE" | "LEADER" | "MANAGEMENT" | "ADMIN" | "HR";
+  employmentStatus?: "ACTIVE" | "DEPARTED";
   mustChangePassword: boolean;
 }
 

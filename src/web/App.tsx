@@ -5,6 +5,7 @@ import { AppRouter } from "./router.js";
 import "./styles.css";
 import "./employee.css";
 import "./admin.css";
+import "./archives.css";
 
 export function App() {
   return <BrowserRouter><AuthProvider><AppRouter /></AuthProvider></BrowserRouter>;

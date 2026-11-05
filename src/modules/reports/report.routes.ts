@@ -49,7 +49,7 @@ export const reportRoutes: FastifyPluginAsync<{
     }
   };
 
-  app.get("/api/reports/employees", { preHandler: app.requireUser }, reportHandler);
+  app.get("/api/reports/employees", { preHandler: app.requireRole("EMPLOYEE", "LEADER", "MANAGEMENT", "ADMIN") }, reportHandler);
   app.get("/api/reports/departments", { preHandler: app.requireRole("LEADER", "MANAGEMENT", "ADMIN") }, reportHandler);
   app.get("/api/reports/company", { preHandler: app.requireRole("MANAGEMENT", "ADMIN") }, reportHandler);
 

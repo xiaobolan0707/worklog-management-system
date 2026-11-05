@@ -24,7 +24,7 @@ describe("leader and administrator pages",()=>{
     expect(screen.getByRole("radio",{name:"灰色：未完成"})).toBeInTheDocument();
     expect(screen.getByText("员工姓名：张三")).toBeInTheDocument();
     expect(screen.queryByText("employee-1")).not.toBeInTheDocument();
-    expect(screen.getByText("日志当天起三天内核查，只选择红色完成或灰色未完成。")).toBeInTheDocument();
+    expect(screen.getByText("日志提交后即可核查，满72小时后仍可核查，系统会发送逾期提醒。")).toBeInTheDocument();
     expect(screen.queryByText(/score|分数|评分/i)).not.toBeInTheDocument();
     for(const position of [1,2,3,4])await user.type(screen.getByLabelText(`事项 ${position} 批注`),`事项 ${position} 已核查`);
     await user.click(screen.getByRole("button",{name:"确认核查"}));
@@ -45,7 +45,8 @@ describe("leader and administrator pages",()=>{
   });
 
   it("keeps approvers in the configured order",async()=>{
-    vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({users:[
+    vi.spyOn(globalThis,"fetch").mockImplementation(async(input)=>new Response(JSON.stringify(
+      String(input).endsWith("/approvers") ? {assignments:[]} : {users:[
       {id:"employee-1",username:"employee",displayName:"员工",role:"EMPLOYEE"},
       {id:"leader-b",username:"leader-b",displayName:"乙领导",role:"LEADER"},
       {id:"leader-a",username:"leader-a",displayName:"甲领导",role:"LEADER"}
@@ -61,9 +62,28 @@ describe("leader and administrator pages",()=>{
     expect(screen.getByText("第 2 级：甲领导（leader-a）")).toBeInTheDocument();
   });
 
+  it("loads the saved chain before an administrator edits it",async()=>{
+    vi.spyOn(globalThis,"fetch").mockImplementation(async(input)=>new Response(JSON.stringify(
+      String(input).endsWith("/api/admin/users/employee-1/approvers")
+        ? {assignments:[{approverId:"leader-a",position:1}]}
+        : {users:[
+          {id:"employee-1",username:"employee",displayName:"员工",role:"EMPLOYEE"},
+          {id:"leader-a",username:"leader-a",displayName:"甲领导",role:"LEADER"}
+        ]}
+    ),{status:200}));
+    const user=userEvent.setup();
+    render(<ApproversPage/>);
+    await user.selectOptions(await screen.findByLabelText("员工"),"employee-1");
+    expect(await screen.findByText("第 1 级：甲领导（leader-a）")).toBeInTheDocument();
+  });
+
   it("validates schedule settings before saving",async()=>{
+    vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify({settings:{
+      submissionDeadline:"18:00",reminderMinutesBefore:30,approvalDeadline:"12:00",timezone:"Asia/Shanghai"
+    }}),{status:200}));
     const user=userEvent.setup();
     render(<SettingsPage/>);
+    await waitFor(()=>expect(screen.getByRole("button",{name:"保存设置"})).toBeEnabled());
     await user.clear(screen.getByLabelText("日志截止时间"));
     await user.type(screen.getByLabelText("日志截止时间"),"25:90");
     await user.click(screen.getByRole("button",{name:"保存设置"}));
@@ -83,6 +103,29 @@ describe("leader and administrator pages",()=>{
     expect(await screen.findByDisplayValue("19:30")).toBeInTheDocument();
     expect(screen.getByDisplayValue("45")).toBeInTheDocument();
     expect(screen.getByDisplayValue("13:15")).toBeInTheDocument();
+    expect(screen.getByText("审批逾期提醒时间")).toBeInTheDocument();
+  });
+
+  it("lets administrators edit weekly and specific-date reminder exclusions",async()=>{
+    const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(_input,init)=>new Response(JSON.stringify({settings:{
+      submissionDeadline:"18:00",reminderMinutesBefore:30,approvalDeadline:"12:00",timezone:"Asia/Shanghai",
+      logReminderExcludedWeekdays:[0],logReminderExcludedDates:["2026-11-03"]
+    }}),{status:200}));
+    const user=userEvent.setup();
+    render(<SettingsPage/>);
+    await waitFor(()=>expect(screen.getByRole("checkbox",{name:"周日"})).toBeChecked());
+    await user.click(screen.getByRole("checkbox",{name:"周六"}));
+    await user.click(screen.getByRole("button",{name:"移除免交日期 2026-11-03"}));
+    await user.type(screen.getByLabelText("指定免交日期"),"2026-11-04");
+    await user.click(screen.getByRole("button",{name:"添加日期"}));
+    expect(screen.getByText("2026-11-04")).toBeInTheDocument();
+    expect(screen.getByRole("button",{name:"添加日期"})).toBeDisabled();
+    await user.click(screen.getByRole("button",{name:"保存设置"}));
+    await screen.findByText("设置已保存");
+    const saved=fetchMock.mock.calls.find(([,init])=>init?.method==="PUT");
+    expect(JSON.parse(String(saved?.[1]?.body))).toMatchObject({
+      logReminderExcludedWeekdays:[0,6],logReminderExcludedDates:["2026-11-04"]
+    });
   });
 
   it("confirms and deletes an unused user from user management",async()=>{

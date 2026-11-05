@@ -6,6 +6,7 @@ import { LogError, type LogService } from "./log.service.js";
 import { logDraftSchema } from "./log.schemas.js";
 
 const idParams = z.object({ id: z.string().min(1).max(191) });
+const submitBody = z.object({ backfillReason: z.string().trim().min(1).max(100).optional() });
 const replySchema = z.object({
   stepId: z.string().min(1).max(191),
   itemPosition: z.number().int().min(1).max(50),
@@ -74,13 +75,14 @@ export const logRoutes: FastifyPluginAsync<LogRoutesOptions> = async (app, optio
         request.headers["x-csrf-token"] as string | undefined
       );
       const { id } = idParams.parse(request.params);
-      return { log: await options.logService.submitLog(id, request.authenticated!.user.id) };
+      const { backfillReason } = submitBody.parse(request.body ?? {});
+      return { log: await options.logService.submitLog(id, request.authenticated!.user.id, backfillReason) };
     } catch (error) {
       return sendLogError(reply, error);
     }
   });
 
-  app.get("/api/logs/mine", { preHandler: employeeOnly }, async (request, reply) => {
+  app.get("/api/logs/mine", { preHandler: app.requireRole("EMPLOYEE", "LEADER", "MANAGEMENT") }, async (request, reply) => {
     try { return await options.logService.listMine(request.authenticated!.user.id, listQuery.parse(request.query)); }
     catch (error) { return sendLogError(reply, error); }
   });
@@ -101,7 +103,7 @@ export const logRoutes: FastifyPluginAsync<LogRoutesOptions> = async (app, optio
     }
   });
 
-  app.get("/api/logs/:id", { preHandler: app.requireUser }, async (request, reply) => {
+  app.get("/api/logs/:id", { preHandler: app.requireRole("EMPLOYEE", "LEADER", "MANAGEMENT", "ADMIN") }, async (request, reply) => {
     try {
       const { id } = idParams.parse(request.params);
       return { log: await options.logService.getVisibleLog(request.authenticated!.user, id) };
@@ -110,7 +112,7 @@ export const logRoutes: FastifyPluginAsync<LogRoutesOptions> = async (app, optio
     }
   });
 
-  app.get("/api/logs", { preHandler: app.requireUser }, async (request, reply) => {
+  app.get("/api/logs", { preHandler: app.requireRole("EMPLOYEE", "LEADER", "MANAGEMENT", "ADMIN") }, async (request, reply) => {
     try {
       return await options.logService.listVisible(request.authenticated!.user, listQuery.parse(request.query));
     } catch (error) {

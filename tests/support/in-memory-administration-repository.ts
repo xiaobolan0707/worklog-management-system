@@ -22,6 +22,47 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
 
   constructor(private readonly authRepository?: InMemoryAuthRepository) {}
 
+  async findUserById(userId: string) {
+    if (this.deletedUsers.has(userId)) return null;
+    const user = this.users.get(userId);
+    if (user) return user;
+    const authUser = await this.authRepository?.findUserById(userId);
+    return authUser ? { ...authUser, departmentId: null } : null;
+  }
+
+  async findDepartmentById(departmentId: string) {
+    return this.departments.get(departmentId) ?? null;
+  }
+
+  async renameDepartment(departmentId: string, name: string) {
+    const department = this.departments.get(departmentId);
+    if (!department) throw new AdministrationError(404, "DEPARTMENT_NOT_FOUND", "部门不存在");
+    if ([...this.departments.values()].some((item) => item.id !== departmentId && item.name === name)) {
+      throw new AdministrationError(409, "DEPARTMENT_EXISTS", "部门名称已存在");
+    }
+    department.name = name;
+    return department;
+  }
+
+  async listDepartmentEmployees(departmentId: string) {
+    return (await this.listUsers()).filter((user) => user.departmentId === departmentId && user.role === "EMPLOYEE");
+  }
+
+  async updateEmployee(userId: string, expectedDepartmentId: string | null, input: { username?: string; displayName?: string; departmentId: string }) {
+    const user = this.users.get(userId);
+    if (!user || this.deletedUsers.has(userId) || user.role !== "EMPLOYEE" || user.departmentId !== expectedDepartmentId) {
+      throw new AdministrationError(409, "EMPLOYEE_CHANGED", "员工所属部门已发生变化，请刷新后重试");
+    }
+    if (!this.departments.has(input.departmentId)) throw new AdministrationError(400, "INVALID_DEPARTMENT", "所选部门不存在");
+    if (input.username && [...this.users.values()].some((item) => item.id !== userId && item.username === input.username)) {
+      throw new AdministrationError(409, "USERNAME_EXISTS", "用户名已存在");
+    }
+    Object.assign(user, input);
+    const authUser = this.authRepository?.users.get(userId);
+    if (authUser) Object.assign(authUser, input);
+    return user;
+  }
+
   async findUserByUsername(username: string) {
     const user = [...this.users.values()].find((item) => item.username === username && !this.deletedUsers.has(item.id));
     if (user) return user;
@@ -125,6 +166,10 @@ export class InMemoryAdministrationRepository implements AdministrationRepositor
     return [...this.approvers.entries()]
       .filter(([, assignments]) => assignments.some((item) => item.approverId === actorId))
       .map(([employeeId]) => employeeId);
+  }
+
+  async listApprovers(employeeId: string) {
+    return [...(this.approvers.get(employeeId) ?? [])].sort((a, b) => a.position - b.position);
   }
 
   async getSettings() {

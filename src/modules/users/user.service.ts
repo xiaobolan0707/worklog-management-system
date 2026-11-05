@@ -3,6 +3,7 @@ import type { AuditInput } from "../audit/audit.repository.js";
 import { appendAudit as writeAudit } from "../audit/audit.repository.js";
 import type { AuthAccountStatus, AuthRole } from "../auth/auth.repository.js";
 import { hashPassword } from "../auth/password.js";
+import { lockPersonnelActivity } from "../../shared/personnel-lock.js";
 
 export interface AdminUserRecord {
   id: string;
@@ -25,24 +26,33 @@ export interface ScheduleSettings {
   reminderMinutesBefore: number;
   approvalDeadline: string;
   timezone: "Asia/Shanghai";
+  logReminderExcludedWeekdays?: number[];
+  logReminderExcludedDates?: string[];
 }
 
 export type DeleteUserResult = AdminUserRecord | null;
 
 export interface AdministrationRepository {
   findUserByUsername(username: string): Promise<AdminUserRecord | null>;
+  findUserById(userId: string): Promise<AdminUserRecord | null>;
   listUsers(): Promise<AdminUserRecord[]>;
   listDepartments(): Promise<{ id: string; name: string }[]>;
+  findDepartmentById(departmentId: string): Promise<{ id: string; name: string } | null>;
   createDepartment(name: string): Promise<{ id: string; name: string }>;
+  renameDepartment(departmentId: string, name: string): Promise<{ id: string; name: string }>;
+  setNumberPrefix?(departmentId: string, prefix: string | null): Promise<{ id: string; name: string; employeeNumberPrefix: string | null }>;
+  listDepartmentEmployees(departmentId: string): Promise<AdminUserRecord[]>;
+  updateEmployee(userId: string, expectedDepartmentId: string | null, input: { username?: string; displayName?: string; departmentId: string }): Promise<AdminUserRecord>;
   createUser(input: Omit<AdminUserRecord, "id">): Promise<AdminUserRecord>;
   registerEmployee(input: Omit<AdminUserRecord, "id">): Promise<AdminUserRecord>;
   deleteUser(actorId: string, userId: string): Promise<DeleteUserResult>;
   setUserStatus(userId: string, status: AuthAccountStatus): Promise<AdminUserRecord>;
   resetPassword(userId: string, passwordHash: string, revokedAt: Date): Promise<AdminUserRecord>;
   replaceApprovers(employeeId: string, assignments: ApproverAssignmentInput[]): Promise<void>;
+  listApprovers(employeeId: string): Promise<ApproverAssignmentInput[]>;
   listAuthorizedEmployeeIds(actorId: string): Promise<string[]>;
   getSettings(): Promise<ScheduleSettings>;
-  saveSettings(settings: ScheduleSettings): Promise<ScheduleSettings>;
+  saveSettings(settings: ScheduleSettings, patch?: Partial<ScheduleSettings>): Promise<ScheduleSettings>;
   appendAudit(input: AuditInput): Promise<void>;
 }
 
@@ -72,6 +82,83 @@ export class UserService {
     return this.repository.listDepartments();
   }
 
+  private async requireDepartment(departmentId: string) {
+    const department = await this.repository.findDepartmentById(departmentId);
+    if (!department) throw new AdministrationError(400, "INVALID_DEPARTMENT", "所选部门不存在，请刷新后重新选择");
+    return department;
+  }
+
+  private async requireDepartmentAccess(actor: { id: string; role: AuthRole }, departmentId: string) {
+    if (!["ADMIN", "MANAGEMENT", "LEADER"].includes(actor.role)) {
+      throw new AdministrationError(403, "FORBIDDEN", "无权管理员工");
+    }
+    if (actor.role === "LEADER") {
+      const leader = await this.repository.findUserById(actor.id);
+      if (!leader?.departmentId || leader.departmentId !== departmentId) {
+        throw new AdministrationError(403, "FORBIDDEN", "领导仅可查看和维护本部门员工");
+      }
+    }
+    return this.requireDepartment(departmentId);
+  }
+
+  async listManagedDepartments(actor: { id: string; role: AuthRole }) {
+    const departments = await this.repository.listDepartments();
+    if (actor.role === "ADMIN" || actor.role === "MANAGEMENT") return departments;
+    if (actor.role !== "LEADER") throw new AdministrationError(403, "FORBIDDEN", "无权查看部门员工");
+    const leader = await this.repository.findUserById(actor.id);
+    return departments.filter((department) => department.id === leader?.departmentId);
+  }
+
+  async listDepartmentEmployees(actor: { id: string; role: AuthRole }, departmentId: string) {
+    await this.requireDepartmentAccess(actor, departmentId);
+    return this.repository.listDepartmentEmployees(departmentId);
+  }
+
+  async createDepartmentEmployee(actor: { id: string; role: AuthRole }, departmentId: string, input: { username: string; displayName: string; initialPassword: string }) {
+    await this.requireDepartmentAccess(actor, departmentId);
+    return this.createUser(actor.id, { ...input, role: "EMPLOYEE", departmentId });
+  }
+
+  async updateDepartmentEmployee(actor: { id: string; role: AuthRole }, departmentId: string, userId: string, input: { username: string; displayName: string; departmentId: string }) {
+    await this.requireDepartmentAccess(actor, departmentId);
+    const user = await this.repository.findUserById(userId);
+    if (!user || user.role !== "EMPLOYEE" || user.departmentId !== departmentId) {
+      throw new AdministrationError(404, "USER_NOT_FOUND", "该部门下不存在此员工，请刷新后重试");
+    }
+    await this.requireDepartmentAccess(actor, input.departmentId);
+    const duplicate = await this.repository.findUserByUsername(input.username.trim());
+    if (duplicate && duplicate.id !== userId) throw new AdministrationError(409, "USERNAME_EXISTS", "用户名已存在");
+    const updated = await this.repository.updateEmployee(userId, departmentId, {
+      username: input.username.trim(), displayName: input.displayName.trim(), departmentId: input.departmentId
+    });
+    await this.repository.appendAudit({ actorId: actor.id, subjectUserId: userId, action: "EMPLOYEE_UPDATED", entityType: "User", entityId: userId,
+      metadata: { previousDepartmentId: departmentId, departmentId: updated.departmentId, username: updated.username, displayName: updated.displayName } });
+    return updated;
+  }
+
+  async getEmployeeProfile(userId: string) {
+    const user = await this.repository.findUserById(userId);
+    if (!user || !["EMPLOYEE", "LEADER", "MANAGEMENT"].includes(user.role)) throw new AdministrationError(404, "USER_NOT_FOUND", "员工档案不存在");
+    return user;
+  }
+
+  async setOwnDepartment(userId: string, departmentId: string) {
+    const user = await this.getEmployeeProfile(userId);
+    await this.requireDepartment(departmentId);
+    const updated = await this.repository.updateEmployee(userId, user.departmentId, { departmentId });
+    await this.repository.appendAudit({ actorId: userId, subjectUserId: userId, action: "EMPLOYEE_DEPARTMENT_SELECTED", entityType: "User", entityId: userId,
+      metadata: { previousDepartmentId: user.departmentId, departmentId } });
+    return updated;
+  }
+
+  async setNumberPrefix(actorId: string, departmentId: string, prefix: string | null) {
+    await this.requireDepartment(departmentId);
+    if (!this.repository.setNumberPrefix) throw new AdministrationError(503, "UNAVAILABLE", "当前环境未启用工号标识配置");
+    const department = await this.repository.setNumberPrefix(departmentId, prefix || null);
+    await this.repository.appendAudit({ actorId, action: "DEPARTMENT_NUMBER_PREFIX_CHANGED", entityType: "Department", entityId: departmentId, metadata: { prefix } });
+    return department;
+  }
+
   async registerEmployee(input: { username: string; displayName: string; password: string }) {
     const username = input.username.trim();
     return this.repository.registerEmployee({
@@ -96,6 +183,7 @@ export class UserService {
     }
   ) {
     const username = input.username.trim();
+    if (input.departmentId) await this.requireDepartment(input.departmentId);
     if (await this.repository.findUserByUsername(username)) {
       throw new AdministrationError(409, "USERNAME_EXISTS", "用户名已存在");
     }
@@ -164,6 +252,9 @@ export class UserService {
   }
 
   async createDepartment(actorId: string, name: string) {
+    if ((await this.repository.listDepartments()).some((department) => department.name === name.trim())) {
+      throw new AdministrationError(409, "DEPARTMENT_EXISTS", "部门名称已存在，请使用其他名称");
+    }
     const department = await this.repository.createDepartment(name.trim());
     await this.repository.appendAudit({
       actorId,
@@ -174,17 +265,82 @@ export class UserService {
     });
     return department;
   }
+
+  async renameDepartment(actorId: string, departmentId: string, name: string) {
+    const current = await this.repository.findDepartmentById(departmentId);
+    if (!current) throw new AdministrationError(404, "DEPARTMENT_NOT_FOUND", "部门不存在，请刷新后重试");
+    if ((await this.repository.listDepartments()).some((department) => department.id !== departmentId && department.name === name.trim())) {
+      throw new AdministrationError(409, "DEPARTMENT_EXISTS", "部门名称已存在，请使用其他名称");
+    }
+    const department = await this.repository.renameDepartment(departmentId, name.trim());
+    await this.repository.appendAudit({ actorId, action: "DEPARTMENT_RENAMED", entityType: "Department", entityId: departmentId,
+      metadata: { previousName: current.name, name: department.name } });
+    return department;
+  }
 }
+
+const employeeSelect = {
+  id: true, username: true, displayName: true, passwordHash: true, role: true,
+  accountStatus: true, departmentId: true, mustChangePassword: true
+} as const;
 
 export class PrismaAdministrationRepository implements AdministrationRepository {
   constructor(private readonly database: PrismaClient) {}
 
+  findUserById(userId: string) {
+    return this.database.user.findFirst({ where: { id: userId, deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null }, select: employeeSelect });
+  }
+
+  findDepartmentById(departmentId: string) {
+    return this.database.department.findUnique({ where: { id: departmentId }, select: { id: true, name: true } });
+  }
+
+  listDepartmentEmployees(departmentId: string) {
+    return this.database.user.findMany({ where: { departmentId, role: "EMPLOYEE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null }, orderBy: { username: "asc" }, select: employeeSelect });
+  }
+
+  async renameDepartment(departmentId: string, name: string) {
+    try {
+      return await this.database.department.update({ where: { id: departmentId }, data: { name }, select: { id: true, name: true } });
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error) {
+        if (error.code === "P2002") throw new AdministrationError(409, "DEPARTMENT_EXISTS", "部门名称已存在，请使用其他名称");
+        if (error.code === "P2025") throw new AdministrationError(404, "DEPARTMENT_NOT_FOUND", "部门不存在，请刷新后重试");
+      }
+      throw error;
+    }
+  }
+
+  async updateEmployee(userId: string, expectedDepartmentId: string | null, input: { username?: string; displayName?: string; departmentId: string }) {
+    try {
+      return await this.database.$transaction(async (transaction) => {
+        const changed = await transaction.user.updateMany({
+          where: { id: userId, departmentId: expectedDepartmentId, role: "EMPLOYEE", employmentStatus: "ACTIVE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null }, data: input
+        });
+        if (changed.count !== 1) throw new AdministrationError(409, "EMPLOYEE_CHANGED", "员工所属部门已发生变化，请刷新后重试");
+        const user = await transaction.user.findFirst({ where: { id: userId, deletedAt: null }, select: employeeSelect });
+        if (!user) throw new AdministrationError(404, "USER_NOT_FOUND", "员工不存在，请刷新后重试");
+        return user;
+      });
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error) {
+        if (error.code === "P2002") throw new AdministrationError(409, "USERNAME_EXISTS", "用户名已存在");
+        if (error.code === "P2003") throw new AdministrationError(400, "INVALID_DEPARTMENT", "所选部门不存在，请重新选择");
+      }
+      throw error;
+    }
+  }
+
   private async returnPendingApprovals(transaction: Prisma.TransactionClient, userId: string) {
+    await lockPersonnelActivity(transaction);
     const pendingSteps = await transaction.approvalStep.findMany({
       where: { approverId: userId, status: "PENDING" },
-      select: { dailyLogId: true },
+      select: { dailyLogId: true, dailyLog: { select: { employee: { select: { employmentStatus: true } } } } },
       distinct: ["dailyLogId"]
     });
+    if (pendingSteps.some((step) => step.dailyLog?.employee.employmentStatus === "DEPARTED")) {
+      throw new AdministrationError(409, "DEPARTED_APPROVAL_HANDOVER_REQUIRED", "存在离职员工的待审日志，请先完成审批或由人事移交管理层，再停用或删除账号");
+    }
     for (const { dailyLogId } of pendingSteps) {
       await transaction.approvalStep.updateMany({
         where: { dailyLogId, status: "PENDING" },
@@ -215,7 +371,7 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
 
   async listUsers() {
     return this.database.user.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
       orderBy: [{ accountStatus: "asc" }, { username: "asc" }],
       select: {
         id: true,
@@ -231,15 +387,27 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
   }
 
   listDepartments() {
-    return this.database.department.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
+    return this.database.department.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, employeeNumberPrefix: true } });
+  }
+
+  setNumberPrefix(departmentId: string, prefix: string | null) {
+    return this.database.department.update({ where: { id: departmentId }, data: { employeeNumberPrefix: prefix }, select: { id: true, name: true, employeeNumberPrefix: true } });
   }
 
   async createDepartment(name: string) {
-    return this.database.department.create({ data: { name }, select: { id: true, name: true } });
+    try {
+      return await this.database.department.create({ data: { name }, select: { id: true, name: true } });
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+        throw new AdministrationError(409, "DEPARTMENT_EXISTS", "部门名称已存在，请使用其他名称");
+      }
+      throw error;
+    }
   }
 
   async createUser(input: Omit<AdminUserRecord, "id">) {
-    return this.database.user.create({
+    try {
+      return await this.database.user.create({
       data: input,
       select: {
         id: true,
@@ -251,7 +419,14 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
         departmentId: true,
         mustChangePassword: true
       }
-    });
+      });
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error) {
+        if (error.code === "P2002") throw new AdministrationError(409, "USERNAME_EXISTS", "用户名已存在");
+        if (error.code === "P2003") throw new AdministrationError(400, "INVALID_DEPARTMENT", "所选部门不存在，请重新选择");
+      }
+      throw error;
+    }
   }
 
   async registerEmployee(input: Omit<AdminUserRecord, "id">) {
@@ -291,7 +466,7 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
   async deleteUser(actorId: string, userId: string): Promise<DeleteUserResult> {
     return this.database.$transaction(async (transaction) => {
       const user = await transaction.user.findFirst({
-        where: { id: userId, deletedAt: null },
+        where: { id: userId, deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
         select: {
           id: true,
           username: true,
@@ -315,7 +490,7 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
         data: { revokedAt: deletedAt }
       });
       await transaction.user.update({
-        where: { id: userId },
+        where: { id: userId, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
         data: {
           username: `deleted-${userId}`,
           accountStatus: "DISABLED",
@@ -341,7 +516,7 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
         await transaction.employeeApprover.deleteMany({ where: { approverId: userId } });
       }
       return transaction.user.update({
-        where: { id: userId },
+        where: { id: userId, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
         data: { accountStatus },
         select: {
           id: true, username: true, displayName: true, passwordHash: true, role: true,
@@ -354,7 +529,7 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
   async resetPassword(userId: string, passwordHash: string, revokedAt: Date) {
     return this.database.$transaction(async (transaction) => {
       const user = await transaction.user.update({
-        where: { id: userId },
+        where: { id: userId, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
         data: { passwordHash, mustChangePassword: true, failedLoginCount: 0, lockedUntil: null },
         select: {
           id: true,
@@ -377,15 +552,16 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
 
   async replaceApprovers(employeeId: string, assignments: ApproverAssignmentInput[]) {
     await this.database.$transaction(async (transaction) => {
+      await lockPersonnelActivity(transaction);
       const employee = await transaction.user.findFirst({
-        where: { id: employeeId, role: "EMPLOYEE", accountStatus: "ACTIVE", deletedAt: null },
+        where: { id: employeeId, role: "EMPLOYEE", accountStatus: "ACTIVE", employmentStatus: "ACTIVE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
         select: { id: true }
       });
       const approvers = await transaction.user.count({
         where: {
           id: { in: assignments.map(({ approverId }) => approverId) },
           role: { in: ["LEADER", "MANAGEMENT", "ADMIN"] },
-          accountStatus: "ACTIVE", deletedAt: null
+          accountStatus: "ACTIVE", employmentStatus: "ACTIVE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null
         }
       });
       if (!employee || approvers !== assignments.length) {
@@ -409,6 +585,14 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
     return rows.map((row) => row.employeeId);
   }
 
+  async listApprovers(employeeId: string) {
+    return this.database.employeeApprover.findMany({
+      where: { employeeId, active: true },
+      orderBy: { position: "asc" },
+      select: { approverId: true, position: true }
+    });
+  }
+
   async getSettings(): Promise<ScheduleSettings> {
     const setting = await this.database.systemSetting.findUnique({ where: { key: "worklog.schedule" } });
     return (setting?.value as unknown as ScheduleSettings | undefined) ?? {
@@ -419,14 +603,11 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
     };
   }
 
-  async saveSettings(settings: ScheduleSettings) {
-    const value = settings as unknown as Prisma.InputJsonValue;
-    await this.database.systemSetting.upsert({
-      where: { key: "worklog.schedule" },
-      create: { key: "worklog.schedule", value },
-      update: { value }
-    });
-    return settings;
+  async saveSettings(settings: ScheduleSettings, patch: Partial<ScheduleSettings> = settings) {
+    await this.database.$executeRaw`INSERT INTO system_settings (key, value, updated_at)
+      VALUES ('worklog.schedule', ${JSON.stringify(settings)}::jsonb, CURRENT_TIMESTAMP)
+      ON CONFLICT (key) DO UPDATE SET value = system_settings.value || ${JSON.stringify(patch)}::jsonb, updated_at = CURRENT_TIMESTAMP`;
+    return this.getSettings();
   }
 
   async appendAudit(input: AuditInput) {

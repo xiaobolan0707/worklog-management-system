@@ -6,7 +6,7 @@ import {
 } from "../../../src/modules/approvals/approval.service.js";
 import { InMemoryApprovalRepository } from "../../support/in-memory-approval-repository.js";
 
-function setup(workDate = "2026-10-10", now = "2026-10-10T04:00:00.000Z") {
+function setup(workDate = "2026-10-10") {
   const repository = new InMemoryApprovalRepository();
   repository.addSubmittedLog({
     id: "log-1",
@@ -23,7 +23,7 @@ function setup(workDate = "2026-10-10", now = "2026-10-10T04:00:00.000Z") {
   });
   return {
     repository,
-    service: new ApprovalService(repository, () => new Date(now))
+    service: new ApprovalService(repository)
   };
 }
 
@@ -106,27 +106,38 @@ describe("ApprovalService", () => {
     expect(repository.audits.filter((event) => event.action === "LOG_APPROVED")).toHaveLength(2);
   });
 
-  it("allows review within three calendar days of the work date and rejects later review", async () => {
+  it("allows approval and return after three days without expiring the log", async () => {
     const current = setup();
     const comments = [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "x" }));
     await expect(
       current.service.approveCurrentStep("log-1", "leader-1", "GREEN" as "RED", comments)
     ).rejects.toMatchObject({ code: "INVALID_COLOR" });
 
-    const followingDay = setup("2026-10-10", "2026-10-11T04:00:00.000Z");
+    const followingDay = setup("2026-10-10");
     await expect(
       followingDay.service.approveCurrentStep("log-1", "leader-1", "RED", [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "次日核查完成" })))
     ).resolves.toMatchObject({ color: "RED" });
 
-    const thirdDay = setup("2026-10-09", "2026-10-11T15:59:59.000Z");
+    const thirdDay = setup("2026-10-09");
     await expect(
       thirdDay.service.approveCurrentStep("log-1", "leader-1", "RED", comments)
     ).resolves.toMatchObject({ color: "RED" });
 
-    const late = setup("2026-10-09", "2026-10-11T16:00:00.000Z");
+    const late = setup("2026-09-01");
     await expect(
       late.service.approveCurrentStep("log-1", "leader-1", "RED", [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "x" })))
-    ).rejects.toMatchObject({ code: "APPROVAL_DATE_EXPIRED" });
+    ).resolves.toMatchObject({ color: "RED" });
+
+    const lateReturn = setup("2026-09-01");
+    await expect(lateReturn.service.returnCurrentStep("log-1", "leader-1", comments))
+      .resolves.toMatchObject({ status: "RETURNED" });
+  });
+
+  it("allows a backfilled log to be reviewed from its actual submission date", async () => {
+    const { repository, service } = setup("2026-09-10");
+    Object.assign(repository.logs.get("log-1")!, { isBackfill: true, submittedAt: "2026-10-10T02:00:00.000Z" });
+    await expect(service.approveCurrentStep("log-1", "leader-1", "RED", [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "已核查" }))))
+      .resolves.toMatchObject({ color: "RED" });
   });
 
   it("requires a reason when an authorized leader changes an archived color", async () => {

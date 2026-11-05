@@ -14,7 +14,10 @@ export class ReminderJobs {
     const settings = await this.getSettings();
     const deadline = clockMinutes(settings.submissionDeadline);
     const warning = deadline - settings.reminderMinutesBefore;
-    const missing = await this.repository.listMissingEmployeeIds(current.date);
+    const weekday = new Date(`${current.date}T00:00:00Z`).getUTCDay();
+    const excluded = settings.logReminderExcludedWeekdays?.includes(weekday)
+      || settings.logReminderExcludedDates?.includes(current.date);
+    const missing = excluded ? [] : await this.repository.listMissingEmployeeIds(current.date);
 
     if (current.minutes >= deadline) {
       await Promise.all(
@@ -43,7 +46,7 @@ export class ReminderJobs {
     }
 
     if (current.minutes >= clockMinutes(settings.approvalDeadline)) {
-      const leaders = await this.repository.listOverdueApprovalLeaderIds(current.date);
+      const leaders = await this.repository.listOverdueApprovalLeaderIds(now);
       await Promise.all(
         leaders.map((recipientId) =>
           this.service.create({

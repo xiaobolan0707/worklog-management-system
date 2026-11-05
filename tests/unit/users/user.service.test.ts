@@ -11,6 +11,7 @@ describe("UserService deletion", () => {
     const assignments: string[] = [];
     const repository = new PrismaAdministrationRepository({
       $transaction: async (callback: (client: unknown) => unknown) => callback({
+        $queryRaw: async () => [],
         approvalStep: {
           findMany: async () => [{ dailyLogId: "log-1" }],
           updateMany: async () => ({ count: 1 })
@@ -71,6 +72,7 @@ describe("UserService deletion", () => {
           update
         },
         employeeApprover: { deleteMany: removeAssignments },
+        $queryRaw: async () => [],
         session: { updateMany: revokeSessions },
         approvalStep: {
           findMany: async () => [{ dailyLogId: "log-1" }],
@@ -84,7 +86,7 @@ describe("UserService deletion", () => {
 
     await expect(repository.deleteUser("admin-1", "employee-1")).resolves.toMatchObject({ id: "employee-1" });
     expect(update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "employee-1" },
+      where: { id: "employee-1", recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
       data: expect.objectContaining({
         accountStatus: "DISABLED",
         username: "deleted-employee-1",

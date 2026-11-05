@@ -1,11 +1,12 @@
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import { appendAudit as writeAudit, type AuditInput } from "../audit/audit.repository.js";
+import type { AccountLifecycle } from "./account-lifecycle.js";
 
-export type AuthRole = "EMPLOYEE" | "LEADER" | "MANAGEMENT" | "ADMIN";
+export type AuthRole = "EMPLOYEE" | "LEADER" | "MANAGEMENT" | "ADMIN" | "HR";
 export type AuthAccountStatus = "ACTIVE" | "DISABLED";
 export type LoginOutcomeValue = "SUCCESS" | "FAILURE" | "LOCKED";
 
-export interface AuthUserRecord {
+export interface AuthUserRecord extends AccountLifecycle {
   id: string;
   username: string;
   passwordHash: string;
@@ -54,6 +55,8 @@ export interface AuthRepository {
 }
 
 const authUserSelect = {
+  employmentStatus: true, departureMarkedAt: true, loginDisabledAt: true, recycledAt: true,
+  archivePurgingAt: true, archivePurgedAt: true, deletedAt: true,
   id: true,
   username: true,
   passwordHash: true,

@@ -1,6 +1,8 @@
 import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
 import { appendAudit } from "../audit/audit.repository.js";
 import { logSubmissionItemsSchema, type LogImagePayload } from "./log.schemas.js";
+import { AuthError } from "../auth/auth.service.js";
+import { lockPersonnelActivity } from "../../shared/personnel-lock.js";
 
 export type LogStatusValue = "DRAFT" | "SUBMITTED" | "IN_REVIEW" | "RETURNED" | "ARCHIVED";
 export type LogColorValue = "GREEN" | "RED" | "GRAY";
@@ -38,6 +40,8 @@ export interface DailyLogRecord {
   color: LogColorValue | null;
   version: number;
   submissionCount: number;
+  isBackfill: boolean;
+  backfillReason: string | null;
   planTarget: string | null;
   planDueAt: string | null;
   items: {
@@ -74,6 +78,7 @@ export interface LogSummary {
   workDate: string;
   status: LogStatusValue;
   color: LogColorValue | null;
+  isBackfill: boolean;
   planTarget: string | null;
   planDueAt: string | null;
 }
@@ -82,7 +87,7 @@ export interface LogListResult { logs: LogSummary[]; total: number; page: number
 export interface LogRepository {
   saveDraft(employeeId: string, input: LogDraftInput): Promise<DailyLogRecord>;
   updateOwnedDraft(logId: string, employeeId: string, input: LogDraftInput): Promise<DailyLogRecord | null>;
-  submitOwnedLog(logId: string, employeeId: string): Promise<SubmitLogResult>;
+  submitOwnedLog(logId: string, employeeId: string, backfillReason?: string, submittedAt?: Date): Promise<SubmitLogResult>;
   findById(logId: string): Promise<DailyLogRecord | null>;
   addCommentReply(logId: string, employeeId: string, stepId: string, itemPosition: number, content: string): Promise<DailyLogRecord | null>;
   listScoped(employeeIds: string[] | null, query: LogListQuery): Promise<LogListResult>;
@@ -102,7 +107,7 @@ const includeLog = {
 };
 
 const selectSummary = {
-  id: true, employeeId: true, workDate: true, status: true, color: true,
+  id: true, employeeId: true, workDate: true, status: true, color: true, isBackfill: true,
   planTarget: true, planDueAt: true,
   employee: { select: { displayName: true, username: true } }
 } as const;
@@ -126,6 +131,8 @@ function toRecord(log: Awaited<ReturnType<PrismaLogRepository["load"]>>): DailyL
     color: log.color,
     version: log.version,
     submissionCount: log.submissionCount,
+    isBackfill: log.isBackfill,
+    backfillReason: log.backfillReason,
     planTarget: log.planTarget,
     planDueAt: log.planDueAt?.toISOString() ?? null,
     items: log.items.map((item) => ({
@@ -159,13 +166,26 @@ function toRecord(log: Awaited<ReturnType<PrismaLogRepository["load"]>>): DailyL
 export class PrismaLogRepository implements LogRepository {
   constructor(private readonly database: PrismaClient) {}
 
+  private async lockWritableEmployee(transaction: Prisma.TransactionClient, employeeId: string) {
+    await lockPersonnelActivity(transaction);
+    await transaction.$queryRaw`SELECT id FROM users WHERE id = ${employeeId} FOR UPDATE`;
+    const employee = await transaction.user.findFirst({ where: { id: employeeId, role: "EMPLOYEE", employmentStatus: "ACTIVE", recycledAt: null, archivePurgingAt: null, archivePurgedAt: null, deletedAt: null }, select: { id: true } });
+    if (!employee) throw new AuthError(403, "DEPARTED_READ_ONLY", "离职或回收后不能修改、提交日志");
+  }
+
   private load(id: string) {
-    return this.database.dailyLog.findUnique({ where: { id }, include: includeLog });
+    return this.database.dailyLog.findUnique({ where: { id, employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } }, include: includeLog });
+  }
+
+  async findRecycledById(id: string) {
+    const log = await this.database.dailyLog.findUnique({ where: { id, employee: { recycledAt: { not: null }, archivePurgingAt: null, archivePurgedAt: null } }, include: includeLog });
+    return log ? toRecord(log) : null;
   }
 
   async saveDraft(employeeId: string, input: LogDraftInput) {
     const workDate = new Date(`${input.workDate}T00:00:00.000Z`);
     const log = await this.database.$transaction(async (transaction) => {
+      await this.lockWritableEmployee(transaction, employeeId);
       const existing = await transaction.dailyLog.findUnique({
         where: { employeeId_workDate: { employeeId, workDate } }
       });
@@ -215,8 +235,9 @@ export class PrismaLogRepository implements LogRepository {
     return this.saveDraft(employeeId, { ...input, workDate: formatDate(existing.workDate) });
   }
 
-  async submitOwnedLog(logId: string, employeeId: string): Promise<SubmitLogResult> {
+  async submitOwnedLog(logId: string, employeeId: string, backfillReason?: string, submittedAt = new Date()): Promise<SubmitLogResult> {
     return this.database.$transaction(async (transaction) => {
+      await this.lockWritableEmployee(transaction, employeeId);
       const log = await transaction.dailyLog.findUnique({
         where: { id: logId },
         include: { items: { orderBy: { position: "asc" } } }
@@ -231,7 +252,7 @@ export class PrismaLogRepository implements LogRepository {
       })));
       if (!parsedItems.success) return "INVALID";
       const approvers = await transaction.employeeApprover.findMany({
-        where: { employeeId, active: true },
+        where: { employeeId, active: true, approver: { employmentStatus: "ACTIVE", accountStatus: "ACTIVE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } },
         orderBy: { position: "asc" }
       });
       if (approvers.length === 0) return "NO_APPROVERS";
@@ -240,7 +261,8 @@ export class PrismaLogRepository implements LogRepository {
         data: {
           status: "SUBMITTED",
           color: "GREEN",
-          submittedAt: new Date(),
+          submittedAt,
+          ...(backfillReason ? { isBackfill: true, backfillReason } : {}),
           submissionCount: { increment: 1 },
           version: { increment: 1 }
         }
@@ -274,7 +296,7 @@ export class PrismaLogRepository implements LogRepository {
         action: "LOG_SUBMITTED",
         entityType: "DailyLog",
         entityId: logId,
-        metadata: { workDate: formatDate(log.workDate) }
+        metadata: { workDate: formatDate(log.workDate), isBackfill: log.isBackfill || Boolean(backfillReason), backfillReason: backfillReason ?? log.backfillReason }
       });
       const saved = await transaction.dailyLog.findUnique({ where: { id: logId }, include: includeLog });
       return toRecord(saved);
@@ -288,6 +310,7 @@ export class PrismaLogRepository implements LogRepository {
 
   async addCommentReply(logId: string, employeeId: string, stepId: string, itemPosition: number, content: string) {
     const created = await this.database.$transaction(async (transaction) => {
+      await this.lockWritableEmployee(transaction, employeeId);
       const step = await transaction.approvalStep.findFirst({
         where: { id: stepId, dailyLogId: logId, dailyLog: { employeeId } },
         select: { approverId: true, itemComments: true, status: true }
@@ -317,6 +340,7 @@ export class PrismaLogRepository implements LogRepository {
     const search = query.search.trim();
     const searchDate = /^\d{4}-\d{2}-\d{2}$/.test(search) ? new Date(`${search}T00:00:00.000Z`) : null;
     const where: Prisma.DailyLogWhereInput = {
+      employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
       ...(employeeIds === null ? {} : { employeeId: { in: employeeIds } }),
       ...(search ? { OR: [
         { employeeId: search },
@@ -338,7 +362,7 @@ export class PrismaLogRepository implements LogRepository {
       logs: logs.map((log) => ({
         id: log.id, employeeId: log.employeeId,
         employeeName: log.employee.displayName ?? log.employee.username,
-        workDate: formatDate(log.workDate), status: log.status, color: log.color,
+        workDate: formatDate(log.workDate), status: log.status, color: log.color, isBackfill: log.isBackfill,
         planTarget: log.planTarget, planDueAt: log.planDueAt?.toISOString() ?? null
       })),
       total, page: query.page, pageSize: query.pageSize

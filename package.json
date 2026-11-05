@@ -19,6 +19,7 @@
     "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:seed": "prisma db seed",
+    "archives:dry-run": "tsx src/scripts/archive-lifecycle-dry-run.ts",
     "verify": "pnpm test && pnpm typecheck && pnpm build && pnpm prisma:validate && pnpm audit --prod --audit-level high"
   },
   "dependencies": {

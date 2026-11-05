@@ -6,6 +6,7 @@ describe("ApproverService", () => {
   it("preserves the administrator's approver order with one-based positions", () => {
     const service = new ApproverService({
       replaceApprovers: async () => undefined,
+      listApprovers: async () => [],
       listAuthorizedEmployeeIds: async () => []
     });
 
@@ -18,6 +19,7 @@ describe("ApproverService", () => {
   it("rejects duplicate approvers for one employee", () => {
     const service = new ApproverService({
       replaceApprovers: async () => undefined,
+      listApprovers: async () => [],
       listAuthorizedEmployeeIds: async () => []
     });
 

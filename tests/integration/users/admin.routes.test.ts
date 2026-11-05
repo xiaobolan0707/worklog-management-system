@@ -101,6 +101,25 @@ describe("administrator organization routes", () => {
     }
   });
 
+  it("returns an employee's saved approval chain only to administrators", async () => {
+    const app = await createApp();
+    const admin = await credentials(app, "admin", "Admin-password-42");
+    const employee = await administrationRepository.createUser({
+      username: "employee-chain", displayName: "员工", passwordHash: "hidden", role: "EMPLOYEE",
+      accountStatus: "ACTIVE", departmentId: null, mustChangePassword: false
+    });
+    const leader = await administrationRepository.createUser({
+      username: "leader-chain", displayName: "领导", passwordHash: "hidden", role: "LEADER",
+      accountStatus: "ACTIVE", departmentId: null, mustChangePassword: false
+    });
+    await administrationRepository.replaceApprovers(employee.id, [{ approverId: leader.id, position: 1 }]);
+    const url = `/api/admin/users/${employee.id}/approvers`;
+    const response = await app.inject({ method: "GET", url, headers: { cookie: admin.cookie } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().assignments).toEqual([{ approverId: leader.id, position: 1 }]);
+    expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+  });
+
   it("lists users and departments for usable administration screens", async () => {
     const app = await createApp();
     const auth = await credentials(app, "admin", "Admin-password-42");
@@ -275,5 +294,26 @@ describe("administrator organization routes", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json().code).toBe("VALIDATION_ERROR");
+  });
+
+  it("persists reminder exclusions through the settings API and rejects invalid weekdays", async () => {
+    const app = await createApp();
+    const auth = await credentials(app, "admin", "Admin-password-42");
+    const initial = await app.inject({ method: "GET", url: "/api/admin/settings", headers: { cookie: auth.cookie } });
+    expect(initial.json().settings).toMatchObject({ logReminderExcludedWeekdays: [], logReminderExcludedDates: [] });
+    const settings = { ...initial.json().settings, logReminderExcludedWeekdays: [0, 6], logReminderExcludedDates: ["2026-11-03"] };
+    const saved = await app.inject({
+      method: "PUT", url: "/api/admin/settings",
+      headers: { cookie: auth.cookie, "x-csrf-token": auth.csrfToken }, payload: settings
+    });
+    expect(saved.statusCode).toBe(200);
+    const invalid = await app.inject({
+      method: "PUT", url: "/api/admin/settings",
+      headers: { cookie: auth.cookie, "x-csrf-token": auth.csrfToken },
+      payload: { ...settings, logReminderExcludedWeekdays: [7] }
+    });
+    expect(invalid.statusCode).toBe(400);
+    const reloaded = await app.inject({ method: "GET", url: "/api/admin/settings", headers: { cookie: auth.cookie } });
+    expect(reloaded.json().settings).toEqual(settings);
   });
 });

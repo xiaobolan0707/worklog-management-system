@@ -42,6 +42,10 @@ export class PrismaAuditQueryRepository implements AuditQueryRepository {
 
   async search(query: AuditQuery) {
     const where = {
+      AND: [
+        { OR: [{ subjectUserId: null }, { subjectUser: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } }] },
+        { OR: [{ actorId: null }, { actor: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } }] }
+      ],
       ...(query.actorId ? { actorId: query.actorId } : {}),
       ...(query.subjectUserId ? { subjectUserId: query.subjectUserId } : {}),
       ...(query.action ? { action: query.action } : {}),

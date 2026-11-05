@@ -3,15 +3,17 @@ import { Link } from "react-router-dom";
 
 import { apiRequest } from "../../api/client.js";
 import { StatusBadge } from "../../components/StatusBadge.js";
+import { logStatusLabels } from "../../labels.js";
 
 interface HistoryLog {
   id: string;
   workDate: string;
   color: "GREEN" | "RED" | "GRAY" | null;
   status: string;
+  isBackfill: boolean;
 }
 
-export function HistoryPage() {
+export function HistoryPage({ canBackfill = true }: { canBackfill?: boolean }) {
   const [logs, setLogs] = useState<HistoryLog[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -33,13 +35,13 @@ export function HistoryPage() {
   }, [page]);
 
   return <main className="page">
-    <div className="page-head"><div><p className="eyebrow">HISTORY</p><h1>历史日志</h1><p>打开日志查看完整工作内容和最新逐项批注。</p></div></div>
+    <div className="page-head"><div><h1>历史日志</h1><p>打开日志查看完整工作内容和最新逐项批注。</p></div>{canBackfill && <Link className="btn secondary" to="/employee/backfill">补写日志</Link>}</div>
     {error && <p className="form-error" role="alert">{error}</p>}
     <div className="history-list">
       {logs.length === 0 && !error ? <section className="panel empty"><strong>暂无历史日志</strong></section> : logs.map((log) =>
         <section className="panel history-card" key={log.id}>
-          <div className="history-status"><strong>{log.workDate}</strong><StatusBadge color={log.color} /></div>
-          <p>{log.status}</p>
+          <div className="history-status"><strong>{log.workDate}</strong>{log.isBackfill && <span className="backfill-tag">补写</span>}<StatusBadge color={log.color} /></div>
+          <p>{logStatusLabels[log.status] ?? log.status}</p>
           <Link className="text-link" to={`/employee/logs/${log.id}`}>查看完整日志与批注</Link>
         </section>
       )}

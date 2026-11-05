@@ -28,6 +28,10 @@ services:
       DATABASE_URL: "${DATABASE_URL:?请设置 DATABASE_URL}"
       SESSION_SECRET: "${SESSION_SECRET:?请设置 SESSION_SECRET}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      ARCHIVE_STORAGE_DIR: /app/data/employee-archives
+      ARCHIVE_LIFECYCLE_ENABLED: "${ARCHIVE_LIFECYCLE_ENABLED:-false}"
+    volumes:
+      - employee-archives:/app/data/employee-archives
     depends_on:
       postgres:
         condition: service_healthy
@@ -85,3 +89,4 @@ networks:
 volumes:
   postgres-data:
   postgres-backups:
+  employee-archives:

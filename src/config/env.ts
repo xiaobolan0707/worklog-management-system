@@ -6,6 +6,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must contain at least 32 characters"),
+  ARCHIVE_STORAGE_DIR: z.string().min(1).optional(),
+  ARCHIVE_LIFECYCLE_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   COOKIE_SECURE: z
     .enum(["true", "false"])
     .default("false")

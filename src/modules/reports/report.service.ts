@@ -65,6 +65,7 @@ export class PrismaReportRepository implements ReportRepository {
     const deadline = clockMinutes((await this.getSettings()).submissionDeadline);
     const logs = await this.database.dailyLog.findMany({
       where: {
+        employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
         ...(employeeIds === null ? {} : { employeeId: { in: employeeIds } }),
         workDate: {
           gte: new Date(`${start}T00:00:00.000Z`),

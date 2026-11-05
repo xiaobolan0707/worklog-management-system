@@ -11,7 +11,7 @@ export const reminderRoutes: FastifyPluginAsync<{
   authService: AuthService;
 }> = async (app, options) => {
   app.get("/api/reminders", { preHandler: app.requireUser }, async (request) => ({
-    reminders: await options.reminderService.list(request.authenticated!.user.id)
+    reminders: (await options.reminderService.list(request.authenticated!.user.id, request.authenticated!.user.role === "HR")).filter((reminder) => request.authenticated!.user.role !== "HR" || reminder.kind === "ARCHIVE_OVERDUE")
   }));
 
   app.post("/api/reminders/:id/read", { preHandler: app.requireUser }, async (request, reply) => {
@@ -21,6 +21,8 @@ export const reminderRoutes: FastifyPluginAsync<{
         request.headers["x-csrf-token"] as string | undefined
       );
       const { id } = paramsSchema.parse(request.params);
+      const visible = await options.reminderService.list(request.authenticated!.user.id, request.authenticated!.user.role === "HR");
+      if (!visible.some((reminder) => reminder.id === id && (request.authenticated!.user.role !== "HR" || reminder.kind === "ARCHIVE_OVERDUE"))) throw new ReminderError(404, "REMINDER_NOT_FOUND", "提醒不存在");
       return { reminder: await options.reminderService.markRead(request.authenticated!.user.id, id) };
     } catch (error) {
       if (error instanceof ReminderError || error instanceof AuthError) {

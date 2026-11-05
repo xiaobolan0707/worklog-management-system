@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import { ApiError, apiRequest } from "../../api/client.js";
+import { roleLabels } from "../../labels.js";
 
 interface AdminUser {
   id: string;
@@ -30,13 +31,16 @@ export function UsersPage() {
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const data = new FormData(form);
     const payload = Object.fromEntries(data) as Record<string, FormDataEntryValue>;
     if (!payload["departmentId"]) delete payload["departmentId"];
-    await apiRequest("/admin/users", { method: "POST", body: JSON.stringify(payload) });
-    event.currentTarget.reset();
-    setNotice("账号已创建，首次登录必须改密码");
-    await load();
+    try {
+      await apiRequest("/admin/users", { method: "POST", body: JSON.stringify(payload) });
+      form.reset();
+      setNotice("账号已创建，首次登录必须改密码");
+      await load();
+    } catch (cause) { setNotice(cause instanceof ApiError ? cause.message : "账号创建失败，请重试"); }
   }
 
   async function reset() {
@@ -70,12 +74,12 @@ export function UsersPage() {
   }
 
   return <main className="page">
-    <div className="page-head"><div><p className="eyebrow">ACCOUNT ADMIN</p><h1>用户管理</h1><p>由管理员创建账号和初始密码。</p></div></div>
+    <div className="page-head"><div><h1>用户管理</h1><p>由管理员创建账号和初始密码。</p></div></div>
+    <section className="panel table-wrap"><table><thead><tr><th>姓名</th><th>用户名</th><th>角色</th><th>状态</th><th>用户 ID</th><th>操作</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.displayName || "-"}</td><td>{user.username}</td><td>{roleLabels[user.role] ?? user.role}</td><td>{user.accountStatus === "ACTIVE" ? "启用" : "停用"}</td><td><code>{user.id}</code></td><td><div className="form-actions"><button className="btn secondary" onClick={() => void toggle(user)}>{user.accountStatus === "ACTIVE" ? "停用" : "启用"}</button><button className="btn secondary" aria-label={`删除${user.displayName||user.username}`} onClick={() => void remove(user)}>删除</button></div></td></tr>)}</tbody></table></section>
     <div className="admin-grid">
-      <form className="panel" onSubmit={create}><h2>创建账号</h2><label className="field"><span>用户名</span><input name="username" required /></label><label className="field"><span>姓名</span><input name="displayName" required /></label><label className="field"><span>初始密码</span><input name="initialPassword" type="password" minLength={6} required /></label><label className="field"><span>角色</span><select name="role"><option value="EMPLOYEE">员工</option><option value="LEADER">领导</option><option value="MANAGEMENT">管理层</option><option value="ADMIN">管理员</option></select></label><label className="field"><span>所属部门</span><select name="departmentId"><option value="">不指定</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label><button className="btn primary">创建用户</button></form>
+      <form className="panel" onSubmit={create}><h2>创建账号</h2><label className="field"><span>用户名</span><input name="username" required /></label><label className="field"><span>姓名</span><input name="displayName" required /></label><label className="field"><span>初始密码</span><input name="initialPassword" type="password" minLength={6} required /></label><label className="field"><span>角色</span><select name="role"><option value="EMPLOYEE">员工</option><option value="LEADER">领导</option><option value="MANAGEMENT">管理层</option><option value="ADMIN">管理员</option><option value="HR">人事（独立监督账号）</option></select></label><label className="field"><span>所属部门</span><select name="departmentId"><option value="">不指定</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label><button className="btn primary">创建用户</button></form>
       <section className="panel"><h2>重置密码</h2><label className="field"><span>选择用户</span><select value={resetUserId} onChange={(event) => setResetUserId(event.target.value)}><option value="">请选择</option>{users.map((user) => <option key={user.id} value={user.id}>{user.displayName || user.username}（{user.username}）</option>)}</select></label><label className="field"><span>新初始密码</span><input value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} type="password" minLength={6} /></label><button className="btn secondary" disabled={!resetUserId || resetPassword.length < 6} onClick={() => void reset()}>重置密码</button></section>
     </div>
     {notice && <p className="notice">{notice}</p>}
-    <section className="panel table-wrap"><table><thead><tr><th>姓名</th><th>用户名</th><th>角色</th><th>状态</th><th>用户 ID</th><th>操作</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td>{user.displayName || "-"}</td><td>{user.username}</td><td>{user.role}</td><td>{user.accountStatus === "ACTIVE" ? "启用" : "停用"}</td><td><code>{user.id}</code></td><td><div className="form-actions"><button className="btn secondary" onClick={() => void toggle(user)}>{user.accountStatus === "ACTIVE" ? "停用" : "启用"}</button><button className="btn secondary" aria-label={`删除${user.displayName||user.username}`} onClick={() => void remove(user)}>删除</button></div></td></tr>)}</tbody></table></section>
   </main>;
 }

@@ -191,7 +191,7 @@ export function TodayLogPage() {
 
   return (
     <main className="page">
-      <div className="page-head"><div><p className="eyebrow">TODAY · {todayInBeijing()}</p><h1>今日工作日志</h1><p>按 1、2、3… 逐项填写当天工作，完成情况由领导核查。</p></div>{log && <StatusBadge color={log.color} />}</div>
+      <div className="page-head"><div><p className="page-date">{todayInBeijing()}</p><h1>今日工作日志</h1><p>按 1、2、3… 逐项填写当天工作，完成情况由领导核查。</p></div>{log && <StatusBadge color={log.color} />}</div>
       {notice && <p className="notice success">{notice}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
       <section className="panel form-panel">
@@ -210,7 +210,7 @@ export function TodayLogPage() {
           tabIndex={0}
         >
           <div className="work-plan-head">
-            <div><p className="eyebrow">RECENT 7 DAYS</p><h2>员工工作计划</h2></div>
+            <div><h2>员工工作计划</h2></div>
             <span>滚动鼠标滚轮切换日期</span>
           </div>
           <div className="work-plan-dates" aria-label="最近七天日期">

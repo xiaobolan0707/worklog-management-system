@@ -4,17 +4,19 @@ import { PrismaReminderRepository, ReminderService } from "../../../src/modules/
 import { InMemoryReminderRepository } from "../../support/in-memory-reminder-repository.js";
 
 describe("ReminderService", () => {
-  it("finds overdue approvals from earlier work dates", async () => {
+  it("finds overdue approvals only after 72 hours from submission", async () => {
     const repository = new PrismaReminderRepository({
       approvalStep: {
-        findMany: async ({ where }: { where: { dailyLog: { workDate: { lt?: Date } } } }) =>
-          where.dailyLog.workDate.lt?.toISOString() === "2026-10-11T00:00:00.000Z"
+        findMany: async ({ where }: { where: { dailyLog: { submittedAt: { lte?: Date } } } }) =>
+          where.dailyLog.submittedAt.lte?.toISOString() === "2026-10-11T04:00:00.000Z"
             ? [{ approverId: "leader-yesterday", dailyLogId: "log-1", position: 1, submissionNumber: 1, dailyLog: { submissionCount: 1 } }]
             : []
       }
     } as never);
-    await expect(repository.listOverdueApprovalLeaderIds("2026-10-11"))
+    await expect(repository.listOverdueApprovalLeaderIds(new Date("2026-10-14T04:00:00.000Z")))
       .resolves.toEqual(["leader-yesterday"]);
+    await expect(repository.listOverdueApprovalLeaderIds(new Date("2026-10-14T03:59:59.999Z")))
+      .resolves.toEqual([]);
   });
 
   it("reminds only the current approver for an older pending log", async () => {
@@ -25,7 +27,7 @@ describe("ReminderService", () => {
         { approverId: "leader-old-round", dailyLogId: "log-2", position: 1, submissionNumber: 1, dailyLog: { submissionCount: 2 } }
       ] }
     } as never);
-    await expect(repository.listOverdueApprovalLeaderIds("2026-10-11"))
+    await expect(repository.listOverdueApprovalLeaderIds(new Date("2026-10-14T04:00:00.000Z")))
       .resolves.toEqual(["leader-first"]);
   });
 

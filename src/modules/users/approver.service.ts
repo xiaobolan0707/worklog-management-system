@@ -2,7 +2,7 @@ import type { AdministrationRepository, ApproverAssignmentInput } from "./user.s
 
 type ApproverRepository = Pick<
   AdministrationRepository,
-  "replaceApprovers" | "listAuthorizedEmployeeIds"
+  "replaceApprovers" | "listApprovers" | "listAuthorizedEmployeeIds"
 >;
 
 export class ApproverService {
@@ -23,5 +23,9 @@ export class ApproverService {
 
   listAuthorizedEmployeeIds(actorId: string) {
     return this.repository.listAuthorizedEmployeeIds(actorId);
+  }
+
+  listApprovers(employeeId: string) {
+    return this.repository.listApprovers(employeeId);
   }
 }

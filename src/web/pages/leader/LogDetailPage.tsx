@@ -9,6 +9,8 @@ import { LetterLog, type LetterLogItem } from "../../components/logs/LetterLog.j
 interface LogDetail {
   employeeName: string;
   workDate: string;
+  isBackfill: boolean;
+  backfillReason: string | null;
   color: "GREEN" | "RED" | "GRAY" | null;
   submissionCount?: number;
   versions?: { position: number; content: string }[][];
@@ -16,7 +18,7 @@ interface LogDetail {
   approvalSteps: ApprovalStepView[];
 }
 
-export function LogDetailPage({ backTo = "/leader/logs" }: { backTo?: string }) {
+export function LogDetailPage({ backTo = "/leader/logs", canBackfill = false, canReply = backTo === "/employee/history" }: { backTo?: string; canBackfill?: boolean; canReply?: boolean }) {
   const { id = "" } = useParams();
   const location = useLocation();
   const reminderId = (location.state as { reminderId?: string } | null)?.reminderId;
@@ -65,12 +67,13 @@ export function LogDetailPage({ backTo = "/leader/logs" }: { backTo?: string }) 
   ) ?? [];
   const oldSubmissions = [...new Set(oldSteps.map((step) => step.submissionNumber ?? submissionCount))].sort((a, b) => a - b);
   return <main className="page">
-    <div className="page-head"><div><p className="eyebrow">LOG DETAIL</p><h1>完整日志</h1><p><Link to={backTo}>返回日志列表</Link></p></div><StatusBadge color={log?.color ?? null} /></div>
+    <div className="page-head"><div><h1>完整日志 {log?.isBackfill && <span className="backfill-tag">补写</span>}</h1><p><Link to={backTo}>返回日志列表</Link></p></div><StatusBadge color={log?.color ?? null} />{canBackfill && <Link className="btn secondary" to="/employee/backfill">补写日志</Link>}</div>
     {error && <p className="form-error" role="alert">{error}</p>}
     {log && <section className="panel">
+      {log.isBackfill && <p>补写原因：{log.backfillReason}</p>}
       <LetterLog items={log.items} employeeName={log.employeeName} workDate={log.workDate}
         renderCommentColumn={(item, index) => <ItemCommentThread steps={currentSteps} itemPosition={item.position ?? index + 1}
-          onReply={backTo === "/employee/history" ? replyToComment : undefined} />} />
+          onReply={canReply ? replyToComment : undefined} />} />
       {oldSubmissions.map((number) => {
         const steps = oldSteps.filter((step) => (step.submissionNumber ?? submissionCount) === number);
         const positions = [...new Set(steps.flatMap((step) => step.itemComments?.map((item) => item.itemPosition) ?? []))].sort((a, b) => a - b);
@@ -80,7 +83,7 @@ export function LogDetailPage({ backTo = "/leader/logs" }: { backTo?: string }) 
             <strong>原第 {position} 项工作</strong>
             <p>{log.versions?.[number - 1]?.find((item) => item.position === position)?.content ?? "原工作内容未保存"}</p>
             <ItemCommentThread steps={steps} itemPosition={position}
-              onReply={backTo === "/employee/history" ? replyToComment : undefined} />
+              onReply={canReply ? replyToComment : undefined} />
           </div>)}
         </section>;
       })}

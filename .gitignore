@@ -2,6 +2,7 @@ node_modules/
 dist/
 src/generated/prisma/
 coverage/
+data/employee-archives/
 .env
 .env.*
 !.env.example

@@ -18,7 +18,6 @@ export function ChangeInitialPasswordPage({
   return (
     <main className="center-page">
       <section className="panel password-panel">
-        <p className="eyebrow">ACCOUNT SECURITY</p>
         <h1>首次登录，请设置新密码</h1>
         <p className="muted">新密码至少 6 位，保存后即可进入工作台。</p>
         <form onSubmit={submit}>

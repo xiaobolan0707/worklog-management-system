@@ -7,7 +7,10 @@ export type ReminderKindValue =
   | "APPROVAL_OVERDUE"
   | "LOG_RETURNED"
   | "APPROVAL_COMPLETED"
-  | "COMMENT_REPLY";
+  | "COMMENT_REPLY"
+  | "ARCHIVE_OVERDUE"
+  | "HR_SUBMISSION"
+  | "HR_APPROVAL";
 
 export interface ReminderInput {
   recipientId: string;
@@ -26,10 +29,10 @@ export interface ReminderRecord extends ReminderInput {
 
 export interface ReminderRepository {
   createDeduplicated(input: ReminderInput): Promise<ReminderRecord>;
-  listForRecipient(recipientId: string): Promise<ReminderRecord[]>;
+  listForRecipient(recipientId: string, onlyArchive?: boolean): Promise<ReminderRecord[]>;
   markRead(recipientId: string, reminderId: string, readAt: Date): Promise<ReminderRecord | null>;
   listMissingEmployeeIds(workDate: string): Promise<string[]>;
-  listOverdueApprovalLeaderIds(workDate: string): Promise<string[]>;
+  listOverdueApprovalLeaderIds(now: Date): Promise<string[]>;
 }
 
 export class ReminderError extends Error {
@@ -74,8 +77,8 @@ export class ReminderService {
     });
   }
 
-  list(recipientId: string) {
-    return this.repository.listForRecipient(recipientId);
+  list(recipientId: string, onlyArchive = false) {
+    return this.repository.listForRecipient(recipientId, onlyArchive);
   }
 
   async markRead(recipientId: string, reminderId: string) {
@@ -105,9 +108,9 @@ export class PrismaReminderRepository implements ReminderRepository {
     });
   }
 
-  listForRecipient(recipientId: string): Promise<ReminderRecord[]> {
+  listForRecipient(recipientId: string, onlyArchive = false): Promise<ReminderRecord[]> {
     return this.database.reminder.findMany({
-      where: { recipientId },
+      where: { recipientId, ...(onlyArchive ? { kind: "ARCHIVE_OVERDUE" as const } : {}), OR: [{ relatedLogId: null }, { relatedLog: { employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null } } }] },
       orderBy: { createdAt: "desc" }
     });
   }
@@ -127,6 +130,8 @@ export class PrismaReminderRepository implements ReminderRepository {
       where: {
         role: "EMPLOYEE",
         accountStatus: "ACTIVE",
+        employmentStatus: "ACTIVE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null,
+        AND: [{ OR: [{ hireDate: null }, { hireDate: { lte: date } }] }, { OR: [{ departureDate: null }, { departureDate: { gt: date } }] }],
         dailyLogs: { none: { workDate: date, status: { not: "DRAFT" } } }
       },
       select: { id: true }
@@ -134,10 +139,10 @@ export class PrismaReminderRepository implements ReminderRepository {
     return users.map((user) => user.id);
   }
 
-  async listOverdueApprovalLeaderIds(workDate: string) {
-    const date = new Date(`${workDate}T00:00:00.000Z`);
+  async listOverdueApprovalLeaderIds(now: Date) {
+    const threshold = new Date(now.getTime() - 72 * 60 * 60 * 1000);
     const steps = await this.database.approvalStep.findMany({
-      where: { status: "PENDING", dailyLog: { workDate: { lt: date }, status: { in: ["SUBMITTED", "IN_REVIEW"] } } },
+      where: { status: "PENDING", approver: { accountStatus: "ACTIVE", employmentStatus: "ACTIVE", recycledAt: null, archivePurgingAt: null, archivePurgedAt: null }, dailyLog: { employee: { recycledAt: null, archivePurgingAt: null, archivePurgedAt: null }, submittedAt: { lte: threshold }, status: { in: ["SUBMITTED", "IN_REVIEW"] } } },
       select: {
         approverId: true, dailyLogId: true, position: true, submissionNumber: true,
         dailyLog: { select: { submissionCount: true } }

@@ -27,7 +27,8 @@ describe("loadEnv", () => {
       PORT: 3000,
       DATABASE_URL: validInput.DATABASE_URL,
       SESSION_SECRET: validInput.SESSION_SECRET,
-      COOKIE_SECURE: false
+      COOKIE_SECURE: false,
+      ARCHIVE_LIFECYCLE_ENABLED: false
     });
   });
 });

@@ -61,13 +61,12 @@ export function LoginPage({ onLogin }: { onLogin(username: string, password: str
   return (
     <main className="auth-page">
       <section className="auth-brand">
-        <div className="brand-mark">志</div>
-        <p className="eyebrow">WORKLOG SYSTEM</p>
+        <div className="auth-wordmark"><div className="brand-mark">志</div><strong>工作志 <small>WORKLOG</small></strong></div>
         <h1>让每一天的工作<br />清晰、可见、可追踪</h1>
         <p>面向项目研发团队的工作日志与红灰核查平台</p>
+        <div className="auth-workflow"><span>记录工作</span><span aria-hidden="true">/</span><span>逐项核查</span><span aria-hidden="true">/</span><span>回顾成长</span></div>
       </section>
       <section className="auth-card" aria-labelledby="auth-title">
-        <p className="eyebrow">{registering ? "EMPLOYEE SIGN UP" : "WELCOME BACK"}</p>
         <h2 id="auth-title">{registering ? "员工注册" : "登录工作台"}</h2>
         <p className="muted">{registering ? "注册后请等待管理员启用账号" : "请使用您的账号登录"}</p>
         {notice && <p className="notice">{notice}</p>}

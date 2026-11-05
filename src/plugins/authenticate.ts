@@ -30,6 +30,17 @@ const authenticatePluginImplementation: FastifyPluginAsync<AuthenticatePluginOpt
       request.authenticated = await options.authService.authenticate(
         request.cookies[SESSION_COOKIE_NAME]
       );
+      const departed = request.authenticated.user.employmentStatus === "DEPARTED";
+      const credentialAction = ["/api/auth/logout", "/api/auth/change-initial-password"].includes(request.url.split("?")[0]!);
+      if (departed && !["GET", "HEAD"].includes(request.method) && !credentialAction) {
+        return reply.code(403).send({ code: "DEPARTED_READ_ONLY", message: "离职后仅可查看本人资料和历史日志" });
+      }
+      if (departed && ["GET", "HEAD"].includes(request.method)) {
+        const path = request.url.split("?")[0]!;
+        const allowed = path === "/api/auth/me" || path === "/api/profile" || path === "/api/profile/departments" || path === "/api/logs/mine" ||
+          path === "/api/reminders" || /^\/api\/logs\/[^/]+$/.test(path) || path.startsWith(`/api/archives/${request.authenticated.user.id}`);
+        if (!allowed) return reply.code(403).send({ code: "DEPARTED_READ_ONLY", message: "离职后仅可查看本人资料和历史日志" });
+      }
     } catch (error) {
       if (error instanceof AuthError) {
         return reply.code(error.statusCode).send({ code: error.code, message: error.message });

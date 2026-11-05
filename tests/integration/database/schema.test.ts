@@ -26,6 +26,17 @@ async function setup() {
 }
 
 describe("production database schema", () => {
+  it("stores the backfill marker and reason", async () => {
+    const database = await setup();
+    await database.sql`
+      INSERT INTO daily_logs (id, employee_id, work_date, status, is_backfill, backfill_reason, updated_at)
+      VALUES ('backfill-1', 'employee-1', '2026-10-09', 'SUBMITTED', true, '出差后补录', CURRENT_TIMESTAMP)
+    `;
+    const rows = await database.sql<{ is_backfill: boolean; backfill_reason: string }[]>`
+      SELECT is_backfill, backfill_reason FROM daily_logs WHERE id = 'backfill-1'
+    `;
+    expect(rows[0]).toMatchObject({ is_backfill: true, backfill_reason: "出差后补录" });
+  });
   it("rejects an approver relationship that references a missing leader", async () => {
     const database = await setup();
 

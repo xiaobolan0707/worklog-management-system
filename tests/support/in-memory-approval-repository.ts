@@ -21,6 +21,8 @@ export class InMemoryApprovalRepository implements ApprovalRepository {
       employeeId: input.employeeId,
       employeeName: input.employeeName ?? input.employeeId,
       workDate: input.workDate,
+      isBackfill: false,
+      submittedAt: null,
       status: "SUBMITTED",
       color: "GREEN",
       version: 1,

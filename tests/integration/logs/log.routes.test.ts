@@ -13,6 +13,33 @@ beforeEach(async () => {
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
 
 describe("daily log routes", () => {
+  it("requires a reason for backfill, rejects dates outside the last 30 days, and marks the submitted log", async () => {
+    const auth = await loginAs(context.app, "employee");
+    const headers = { cookie: auth.cookie, "x-csrf-token": auth.csrfToken };
+    const items = [1, 2, 3, 4].map(() => ({ content: "已经完成项目接口联调和所有异常情况验证工作", completed: true, images: [] }));
+    const create = async (workDate: string) => context.app.inject({ method: "POST", url: "/api/logs/drafts", headers, payload: { workDate, items } });
+    const old = await create("2026-09-10");
+    expect((await context.app.inject({ method: "POST", url: `/api/logs/${old.json().log.id}/submit`, headers, payload: { backfillReason: "漏填" } })).statusCode).toBe(400);
+    const future = await create("2026-10-11");
+    expect((await context.app.inject({ method: "POST", url: `/api/logs/${future.json().log.id}/submit`, headers, payload: { backfillReason: "提前补录" } })).statusCode).toBe(400);
+    const recent = await create("2026-10-09");
+    const url = `/api/logs/${recent.json().log.id}/submit`;
+    expect((await context.app.inject({ method: "POST", url, headers })).statusCode).toBe(400);
+    expect((await context.app.inject({ method: "POST", url, headers, payload: { backfillReason: "x".repeat(101) } })).statusCode).toBe(400);
+    const submitted = await context.app.inject({ method: "POST", url, headers, payload: { backfillReason: "出差后补录" } });
+    expect(submitted.statusCode).toBe(200);
+    expect(submitted.json().log).toMatchObject({ isBackfill: true, backfillReason: "出差后补录", status: "SUBMITTED" });
+    expect((await context.app.inject({ method: "POST", url, headers, payload: { backfillReason: "再次提交" } })).json().message)
+      .toBe("该日期已有日志，请勿重复补写");
+    const today = await create("2026-10-10");
+    const todayBackfill = await context.app.inject({ method: "POST", url: `/api/logs/${today.json().log.id}/submit`, headers, payload: { backfillReason: "今日漏填后补写" } });
+    expect(todayBackfill.json().log).toMatchObject({ isBackfill: true, backfillReason: "今日漏填后补写" });
+    const returned = context.logRepository.logs.get(recent.json().log.id)!;
+    returned.status = "RETURNED";
+    returned.workDate = "2026-09-10";
+    const resubmitted = await context.app.inject({ method: "POST", url, headers });
+    expect(resubmitted.json().log).toMatchObject({ status: "SUBMITTED", isBackfill: true, backfillReason: "出差后补录" });
+  });
   it("stores one numbered log per day and submits it as green with ordered approvals", async () => {
     const auth = await loginAs(context.app, "employee");
     const request = {

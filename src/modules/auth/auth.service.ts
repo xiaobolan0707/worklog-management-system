@@ -1,6 +1,7 @@
 import type { AuthRepository, AuthSessionRecord, AuthUserRecord } from "./auth.repository.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { createOpaqueToken, hashSessionToken, SESSION_DURATION_MS } from "./session.js";
+import { assertAccountAccessible } from "./account-lifecycle.js";
 
 const MAX_FAILURES = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000;
@@ -31,7 +32,8 @@ export function publicUser(user: AuthUserRecord) {
     username: user.username,
     displayName: user.displayName,
     role: user.role,
-    mustChangePassword: user.mustChangePassword
+    mustChangePassword: user.mustChangePassword,
+    employmentStatus: user.employmentStatus ?? "ACTIVE"
   };
 }
 
@@ -51,6 +53,7 @@ export class AuthService {
     }
 
     const now = this.now();
+    assertAccountAccessible(user, now);
     if (user.accountStatus === "DISABLED") {
       await this.repository.recordLoginAttempt({ username, userId: user.id, ipAddress, outcome: "FAILURE" });
       throw new AuthError(403, "ACCOUNT_DISABLED", "账号已停用");
@@ -109,6 +112,7 @@ export class AuthService {
     }
     const user = await this.repository.findUserById(session.userId);
     if (!user) throw new AuthError(401, "UNAUTHENTICATED", "会话无效，请重新登录");
+    assertAccountAccessible(user, this.now());
     if (user.accountStatus === "DISABLED") {
       throw new AuthError(403, "ACCOUNT_DISABLED", "账号已停用");
     }

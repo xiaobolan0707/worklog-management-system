@@ -12,6 +12,18 @@ enum Role {
   LEADER
   MANAGEMENT
   ADMIN
+  HR
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  DEPARTED
+}
+
+enum ArchiveCategory {
+  RESUME
+  DEGREE
+  AGREEMENT
 }
 
 enum AccountStatus {
@@ -48,6 +60,9 @@ enum ReminderKind {
   LOG_RETURNED
   APPROVAL_COMPLETED
   COMMENT_REPLY
+  ARCHIVE_OVERDUE
+  HR_SUBMISSION
+  HR_APPROVAL
 }
 
 enum RewardPeriod {
@@ -70,6 +85,8 @@ enum LoginOutcome {
 model Department {
   id              String           @id @default(cuid())
   name            String           @unique @db.VarChar(100)
+  employeeNumberPrefix String?      @map("employee_number_prefix") @db.VarChar(20)
+  nextEmployeeNumber Int            @default(0) @map("next_employee_number")
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
   users           User[]
@@ -92,6 +109,21 @@ model User {
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @updatedAt @map("updated_at")
   deletedAt          DateTime?       @map("deleted_at")
+  gender             String?         @db.VarChar(20)
+  hireDate           DateTime?       @map("hire_date") @db.Date
+  departureDate      DateTime?       @map("departure_date") @db.Date
+  employmentStatus   EmploymentStatus @default(ACTIVE) @map("employment_status")
+  departureMarkedAt  DateTime?       @map("departure_marked_at")
+  loginDisabledAt    DateTime?       @map("login_disabled_at")
+  recycleAt          DateTime?       @map("recycle_at")
+  recycledAt         DateTime?       @map("recycled_at")
+  purgeAt            DateTime?       @map("purge_at")
+  restoredAt         DateTime?       @map("restored_at")
+  archivePurgingAt   DateTime?       @map("archive_purging_at")
+  archivePurgedAt    DateTime?       @map("archive_purged_at")
+  employeeNumber     Int?            @map("employee_number")
+  numberDepartmentId String?         @map("number_department_id")
+  archiveAttachments EmployeeAttachment[]
   department         Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   approverAssignments EmployeeApprover[] @relation("ApproverAssignments")
   employeeApprovers  EmployeeApprover[] @relation("EmployeeAssignments")
@@ -110,6 +142,24 @@ model User {
 
   @@index([departmentId])
   @@map("users")
+  @@unique([numberDepartmentId, employeeNumber])
+  @@index([employmentStatus, recycleAt, recycledAt])
+}
+
+model EmployeeAttachment {
+  id         String @id @default(cuid())
+  userId     String @map("user_id")
+  category   ArchiveCategory
+  name       String @db.VarChar(200)
+  mimeType   String @map("mime_type") @db.VarChar(120)
+  size       Int
+  storageKey String @unique @map("storage_key") @db.VarChar(100)
+  createdAt  DateTime @default(now()) @map("created_at")
+  deletedAt  DateTime? @map("deleted_at")
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, category])
+  @@map("employee_attachments")
 }
 
 model EmployeeApprover {
@@ -136,6 +186,8 @@ model DailyLog {
   status          LogStatus      @default(DRAFT)
   color           WorkColor?
   submissionCount Int            @default(0) @map("submission_count")
+  isBackfill      Boolean        @default(false) @map("is_backfill")
+  backfillReason  String?        @map("backfill_reason") @db.VarChar(100)
   submittedAt     DateTime?      @map("submitted_at")
   archivedAt      DateTime?      @map("archived_at")
   planTarget      String?        @map("plan_target") @db.VarChar(500)

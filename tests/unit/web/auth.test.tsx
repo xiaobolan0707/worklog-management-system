@@ -81,6 +81,8 @@ describe("authentication UI", () => {
     expect(screen.getByRole("link", { name: "今日日志" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "用户管理" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "待审日志" })).not.toBeInTheDocument();
+    expect(screen.getByText("员工工作台")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "跳转到主要内容" })).toHaveAttribute("href", "#workspace-content");
     await user.click(screen.getByRole("button", { name: "退出登录" }));
     expect(onLogout).toHaveBeenCalledOnce();
   });

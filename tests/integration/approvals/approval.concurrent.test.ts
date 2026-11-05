@@ -19,7 +19,7 @@ describe("concurrent approval", () => {
         images: []
       }))
     });
-    const service = new ApprovalService(repository, () => new Date("2026-10-10T04:00:00.000Z"));
+    const service = new ApprovalService(repository);
 
     const comments = [1, 2, 3, 4].map((itemPosition) => ({ itemPosition, comment: "ok" }));
     const results = await Promise.allSettled([

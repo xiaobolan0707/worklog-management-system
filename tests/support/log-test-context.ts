@@ -38,6 +38,7 @@ export async function createLogTestContext() {
   logRepository.approvers.set("employee-1", [{ approverId: "leader-1", position: 1 }]);
   const app = await buildApp({
     env: logTestEnv,
+    now: () => new Date("2026-10-10T04:00:00.000Z"),
     authRepository,
     administrationRepository,
     logRepository,

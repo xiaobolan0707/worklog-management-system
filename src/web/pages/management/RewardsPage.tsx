@@ -32,7 +32,7 @@ export function RewardsPage() {
   }
 
   return <main className="page">
-    <div className="page-head"><div><p className="eyebrow">REWARD DECISIONS</p><h1>奖惩确认</h1><p>按当月实际红灰日志确认。</p></div></div>
+    <div className="page-head"><div><h1>奖惩确认</h1><p>按当月实际红灰日志确认。</p></div></div>
     <section className="panel settings-grid">
       <label className="field"><span>员工 ID</span><input value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} /></label>
       <p>红灰数量由系统根据已审批日志计算。</p>
