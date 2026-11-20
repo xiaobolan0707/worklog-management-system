@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
 import { appendAudit } from "../audit/audit.repository.js";
-import { logSubmissionItemsSchema, type LogImagePayload } from "./log.schemas.js";
+import { logSubmissionItemsSchema, snapshotImages, type LogImagePayload } from "./log.schemas.js";
 import { AuthError } from "../auth/auth.service.js";
 import { lockPersonnelActivity } from "../../shared/personnel-lock.js";
 
@@ -84,11 +84,24 @@ export interface LogSummary {
 }
 export interface LogListResult { logs: LogSummary[]; total: number; page: number; pageSize: number }
 
+export type DeleteDraftResult = "OK" | "NOT_FOUND" | "FORBIDDEN" | "NOT_DRAFT";
+
+export interface LogVersionSummary {
+  versionNumber: number;
+  createdAt: string;
+  createdById: string;
+  /** 快照中的图片仅含元信息，不含 base64 内容（PERF-01）。 */
+  snapshot: unknown;
+}
+
 export interface LogRepository {
   saveDraft(employeeId: string, input: LogDraftInput): Promise<DailyLogRecord>;
   updateOwnedDraft(logId: string, employeeId: string, input: LogDraftInput): Promise<DailyLogRecord | null>;
+  deleteOwnedDraft(logId: string, employeeId: string): Promise<DeleteDraftResult>;
   submitOwnedLog(logId: string, employeeId: string, backfillReason?: string, submittedAt?: Date): Promise<SubmitLogResult>;
   findById(logId: string): Promise<DailyLogRecord | null>;
+  /** 历史版本按需加载，不再随详情全量返回（PERF-01）。 */
+  listVersions(logId: string): Promise<LogVersionSummary[]>;
   addCommentReply(logId: string, employeeId: string, stepId: string, itemPosition: number, content: string): Promise<DailyLogRecord | null>;
   listScoped(employeeIds: string[] | null, query: LogListQuery): Promise<LogListResult>;
 }
@@ -102,8 +115,8 @@ const includeLog = {
       approver: { select: { displayName: true, username: true, role: true } },
       replies: { orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }] }
     }
-  },
-  versions: { orderBy: { versionNumber: "asc" as const } }
+  }
+  // PERF-01：不再默认加载 versions，历史版本改由 listVersions 按需获取。
 };
 
 const selectSummary = {
@@ -159,7 +172,7 @@ function toRecord(log: Awaited<ReturnType<PrismaLogRepository["load"]>>): DailyL
       })),
       actedAt: step.actedAt?.toISOString() ?? null
     })),
-    versions: log.versions.map((version) => version.snapshot)
+    versions: []
   };
 }
 
@@ -278,7 +291,7 @@ export class PrismaLogRepository implements LogRepository {
             content: item.content,
             completed: item.completed,
             unfinishedReason: item.unfinishedReason,
-            images: jsonArray<LogImagePayload>(item.images)
+            images: snapshotImages(jsonArray<LogImagePayload>(item.images))
           }))
         }
       });
@@ -306,6 +319,40 @@ export class PrismaLogRepository implements LogRepository {
   async findById(logId: string) {
     const log = await this.load(logId);
     return log ? toRecord(log) : null;
+  }
+
+  async listVersions(logId: string): Promise<LogVersionSummary[]> {
+    const versions = await this.database.logVersion.findMany({
+      where: { dailyLogId: logId },
+      orderBy: { versionNumber: "asc" }
+    });
+    return versions.map((version) => ({
+      versionNumber: version.versionNumber,
+      createdAt: version.createdAt.toISOString(),
+      createdById: version.createdById,
+      snapshot: version.snapshot
+    }));
+  }
+
+  async deleteOwnedDraft(logId: string, employeeId: string): Promise<DeleteDraftResult> {
+    return this.database.$transaction(async (transaction) => {
+      await this.lockWritableEmployee(transaction, employeeId);
+      const log = await transaction.dailyLog.findUnique({ where: { id: logId }, select: { id: true, employeeId: true, status: true, workDate: true } });
+      if (!log) return "NOT_FOUND";
+      if (log.employeeId !== employeeId) return "FORBIDDEN";
+      if (log.status !== "DRAFT") return "NOT_DRAFT";
+      await transaction.logItem.deleteMany({ where: { dailyLogId: logId } });
+      await transaction.dailyLog.delete({ where: { id: logId } });
+      await appendAudit(transaction, {
+        actorId: employeeId,
+        subjectUserId: employeeId,
+        action: "LOG_DRAFT_DELETED",
+        entityType: "DailyLog",
+        entityId: logId,
+        metadata: { workDate: formatDate(log.workDate) }
+      });
+      return "OK";
+    });
   }
 
   async addCommentReply(logId: string, employeeId: string, stepId: string, itemPosition: number, content: string) {

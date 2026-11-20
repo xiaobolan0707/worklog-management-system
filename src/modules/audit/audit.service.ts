@@ -10,6 +10,11 @@ export interface AuditQuery {
   pageSize: number;
 }
 
+export interface AuditUserSummary {
+  displayName: string | null;
+  username: string;
+}
+
 export interface AuditQueryRecord {
   id: string;
   actorId: string | null;
@@ -19,6 +24,9 @@ export interface AuditQueryRecord {
   entityId: string;
   metadata: unknown;
   createdAt: Date;
+  /** 列表直接展示姓名，避免前端只能拿到 cuid。 */
+  actor?: AuditUserSummary | null;
+  subjectUser?: AuditUserSummary | null;
 }
 
 export interface AuditQueryRepository {
@@ -63,6 +71,10 @@ export class PrismaAuditQueryRepository implements AuditQueryRepository {
     const [items, total] = await this.database.$transaction([
       this.database.auditEvent.findMany({
         where,
+        include: {
+          actor: { select: { displayName: true, username: true } },
+          subjectUser: { select: { displayName: true, username: true } }
+        },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize

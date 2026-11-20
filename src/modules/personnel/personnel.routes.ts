@@ -19,6 +19,15 @@ export const personnelRoutes: FastifyPluginAsync<{ personnelService: PersonnelSe
   app.get("/api/hr/personnel", { preHandler: hr }, async (request, reply) => {
     try { return await service.list(request.authenticated!.user); } catch (error) { return sendError(reply, error); }
   });
+  app.get("/api/hr/archive-tracking", { preHandler: hr }, async (request, reply) => {
+    try { return await service.listArchiveTracking(request.authenticated!.user); } catch (error) { return sendError(reply, error); }
+  });
+  app.get("/api/hr/archive-tracking/:id", { preHandler: hr }, async (request, reply) => {
+    try {
+      const { id } = idParams.parse(request.params);
+      return await service.getArchiveTracking(request.authenticated!.user, id);
+    } catch (error) { return sendError(reply, error); }
+  });
   app.patch("/api/hr/personnel/:id", { preHandler: hr }, async (request, reply) => {
     try {
       authService.verifyCsrf(request.authenticated!, request.headers["x-csrf-token"] as string | undefined);
@@ -31,6 +40,13 @@ export const personnelRoutes: FastifyPluginAsync<{ personnelService: PersonnelSe
       authService.verifyCsrf(request.authenticated!, request.headers["x-csrf-token"] as string | undefined);
       const { id } = idParams.parse(request.params);
       return { employee: await service.allocateNumber(request.authenticated!.user, id) };
+    } catch (error) { return sendError(reply, error); }
+  });
+  app.post("/api/hr/personnel/:id/archive-reminder", { preHandler: hr }, async (request, reply) => {
+    try {
+      authService.verifyCsrf(request.authenticated!, request.headers["x-csrf-token"] as string | undefined);
+      const { id } = idParams.parse(request.params);
+      return await service.remindArchive(request.authenticated!.user, id);
     } catch (error) { return sendError(reply, error); }
   });
   app.get("/api/recycle-bin", { preHandler: management }, async (request, reply) => {

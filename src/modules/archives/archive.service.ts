@@ -4,6 +4,7 @@ import { AdministrationError } from "../users/user.service.js";
 import { appendAudit } from "../audit/audit.repository.js";
 import { PrismaLogRepository } from "../logs/log.repository.js";
 import { ArchiveStorage, validateAttachment } from "./archive-storage.js";
+import { archiveDeadline, missingArchiveFields } from "./archive-completion.js";
 
 type Actor = Pick<AuthUserRecord, "id" | "role" | "employmentStatus">;
 export type AttachmentCategory = "RESUME" | "DEGREE" | "AGREEMENT";
@@ -56,10 +57,9 @@ export class ArchiveService {
     const activation = await this.database.systemSetting.findUnique({ where: { key: "employee-archives.enabled-at" }, select: { value: true } });
     const enabledAt = typeof activation?.value === "string" ? new Date(activation.value) : null;
     if (!enabledAt || !Number.isFinite(enabledAt.getTime())) throw new AdministrationError(503, "ARCHIVES_NOT_ENABLED", "档案启用时间未初始化，请先完成数据库迁移");
-    const completionDeadline = new Date(Math.max(enabledAt.getTime(), user.createdAt.getTime()) + 7 * 86_400_000);
+    const completionDeadline = archiveDeadline(user.createdAt, enabledAt);
     const numberDepartment = user.numberDepartmentId ? await this.database.department.findUnique({ where: { id: user.numberDepartmentId }, select: { name: true, employeeNumberPrefix: true } }) : null;
-    const missing = [!user.displayName?.trim() && "员工姓名", !user.gender && "性别", !user.departmentId && "所属部门", !user.hireDate && "入职日期", !user.employeeNumber && "工号",
-      ...(["RESUME", "DEGREE", "AGREEMENT"] as const).map((category) => !user.archiveAttachments.some((file) => file.category === category) && ({ RESUME: "入职简历", DEGREE: "学历证明", AGREEMENT: "劳动合同／合伙人协议" }[category]))].filter(Boolean) as string[];
+    const missing = missingArchiveFields(user);
     const { archiveAttachments, department, archivePurgingAt: _purging, ...profile } = user;
     return { archive: { ...profile, departmentName: department?.name ?? "未分配部门", numberDepartmentName: numberDepartment?.name ?? null,
       employeeNumberDisplay: user.employeeNumber ? `${numberDepartment?.employeeNumberPrefix || `${numberDepartment?.name ?? "原部门"} `}${String(user.employeeNumber).padStart(4, "0")}` : null,
@@ -132,5 +132,15 @@ export class ArchiveService {
     const logs = await this.database.dailyLog.findMany({ where: { employeeId: id }, orderBy: { workDate: "desc" }, select: { id: true } });
     const repository = new PrismaLogRepository(this.database);
     return { logs: await Promise.all(logs.map((log) => repository.findRecycledById(log.id))) };
+  }
+
+  async recycledPlans(actor: Actor, id: string) {
+    await this.scope(actor, id, true);
+    const plans = await this.database.workPlan.findMany({
+      where: { employeeId: id, employee: { recycledAt: { not: null }, archivePurgingAt: null, archivePurgedAt: null } },
+      select: { id: true, workDate: true, target: true, dueAt: true, status: true, rating: true, note: true },
+      orderBy: { workDate: "desc" }
+    });
+    return { plans };
   }
 }

@@ -12,6 +12,8 @@ export interface AuthUserRecord extends AccountLifecycle {
   passwordHash: string;
   displayName: string | null;
   role: AuthRole;
+  /** 部门 ID：审批范围按「领导 = 本部门」判定时使用。 */
+  departmentId?: string | null;
   accountStatus: AuthAccountStatus;
   mustChangePassword: boolean;
   failedLoginCount: number;
@@ -44,13 +46,17 @@ export interface LoginAttemptInput {
 export interface AuthRepository {
   findUserByUsername(username: string): Promise<AuthUserRecord | null>;
   findUserById(id: string): Promise<AuthUserRecord | null>;
-  recordFailedLogin(userId: string, lockedUntil: Date | null): Promise<void>;
+  /** resetCount=true 表示上一段锁定期已结束，失败计数从 1 重新开始（FUNC-01）。 */
+  recordFailedLogin(userId: string, lockedUntil: Date | null, resetCount: boolean): Promise<void>;
   resetLoginFailures(userId: string): Promise<void>;
   recordLoginAttempt(input: LoginAttemptInput): Promise<void>;
   createSession(input: CreateSessionInput): Promise<AuthSessionRecord>;
   findSessionByTokenHash(tokenHash: string): Promise<AuthSessionRecord | null>;
   revokeSession(sessionId: string, revokedAt: Date): Promise<void>;
+  revokeOtherSessions(userId: string, exceptSessionId: string, revokedAt: Date): Promise<void>;
+  rotateCsrfSecret(sessionId: string, csrfSecret: string): Promise<void>;
   updateInitialPassword(userId: string, passwordHash: string): Promise<void>;
+  updatePasswordHash(userId: string, passwordHash: string): Promise<void>;
   appendAudit(input: AuditInput): Promise<void>;
 }
 
@@ -62,6 +68,7 @@ const authUserSelect = {
   passwordHash: true,
   displayName: true,
   role: true,
+  departmentId: true,
   accountStatus: true,
   mustChangePassword: true,
   failedLoginCount: true,
@@ -79,10 +86,12 @@ export class PrismaAuthRepository implements AuthRepository {
     return this.database.user.findUnique({ where: { id }, select: authUserSelect });
   }
 
-  async recordFailedLogin(userId: string, lockedUntil: Date | null) {
+  async recordFailedLogin(userId: string, lockedUntil: Date | null, resetCount: boolean) {
     await this.database.user.update({
       where: { id: userId },
-      data: { failedLoginCount: { increment: 1 }, lockedUntil }
+      data: resetCount
+        ? { failedLoginCount: 1, lockedUntil }
+        : { failedLoginCount: { increment: 1 }, lockedUntil }
     });
   }
 
@@ -109,7 +118,25 @@ export class PrismaAuthRepository implements AuthRepository {
     await this.database.session.update({ where: { id: sessionId }, data: { revokedAt } });
   }
 
+  async revokeOtherSessions(userId: string, exceptSessionId: string, revokedAt: Date) {
+    await this.database.session.updateMany({
+      where: { userId, revokedAt: null, id: { not: exceptSessionId } },
+      data: { revokedAt }
+    });
+  }
+
+  async rotateCsrfSecret(sessionId: string, csrfSecret: string) {
+    await this.database.session.update({ where: { id: sessionId }, data: { csrfSecret } });
+  }
+
   async updateInitialPassword(userId: string, passwordHash: string) {
+    await this.database.user.update({
+      where: { id: userId },
+      data: { passwordHash, mustChangePassword: false, failedLoginCount: 0, lockedUntil: null }
+    });
+  }
+
+  async updatePasswordHash(userId: string, passwordHash: string) {
     await this.database.user.update({
       where: { id: userId },
       data: { passwordHash, mustChangePassword: false, failedLoginCount: 0, lockedUntil: null }

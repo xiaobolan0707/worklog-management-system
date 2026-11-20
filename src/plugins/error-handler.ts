@@ -9,6 +9,18 @@ export const errorHandlerPlugin = fp(async (app) => {
         requestId: request.id
       });
     }
+    // 解析失败（如畸形 JSON）由 Fastify 标记为 4xx，这里统一按客户端错误返回，
+    // 避免落入 500 分支污染错误日志、误导调用方重试。
+    const clientStatus = typeof error === "object" && error !== null && "statusCode" in error
+      ? Number((error as { statusCode?: unknown }).statusCode)
+      : 0;
+    if (clientStatus >= 400 && clientStatus < 500) {
+      return reply.code(clientStatus).send({
+        code: clientStatus === 400 ? "BAD_REQUEST" : "REQUEST_REJECTED",
+        message: clientStatus === 400 ? "请求内容无效，请检查提交数据" : "请求被拒绝",
+        requestId: request.id
+      });
+    }
     const validation = typeof error === "object" && error !== null && "validation" in error;
     if (validation) {
       return reply.code(400).send({

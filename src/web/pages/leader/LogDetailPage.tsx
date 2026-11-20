@@ -13,9 +13,13 @@ interface LogDetail {
   backfillReason: string | null;
   color: "GREEN" | "RED" | "GRAY" | null;
   submissionCount?: number;
-  versions?: { position: number; content: string }[][];
   items: (LetterLogItem & { position: number })[];
   approvalSteps: ApprovalStepView[];
+}
+
+interface LogVersion {
+  versionNumber: number;
+  snapshot: { items: { position: number; content: string }[] };
 }
 
 export function LogDetailPage({ backTo = "/leader/logs", canBackfill = false, canReply = backTo === "/employee/history" }: { backTo?: string; canBackfill?: boolean; canReply?: boolean }) {
@@ -24,7 +28,16 @@ export function LogDetailPage({ backTo = "/leader/logs", canBackfill = false, ca
   const reminderId = (location.state as { reminderId?: string } | null)?.reminderId;
   const readReminderId = useRef<string | null>(null);
   const [log, setLog] = useState<LogDetail | null>(null);
+  const [versions, setVersions] = useState<LogVersion[]>([]);
   const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    // PERF-01：版本快照按需加载，详情接口不再返回全量历史内容。
+    void apiRequest<{ versions: LogVersion[] }>(`/logs/${id}/versions`)
+      .then((result) => { if (active) setVersions(Array.isArray(result?.versions) ? result.versions : []); })
+      .catch(() => { if (active) setVersions([]); });
+    return () => { active = false; };
+  }, [id]);
   useEffect(() => {
     let active = true;
     const load = () => {
@@ -56,7 +69,7 @@ export function LogDetailPage({ backTo = "/leader/logs", canBackfill = false, ca
 
   if (!log && !error) return <main className="page"><p role="status">正在加载日志…</p></main>;
   const submissionCount = log?.submissionCount ?? 1;
-  const latestSnapshot = log?.versions?.[submissionCount - 1];
+  const latestSnapshot = versions[submissionCount - 1]?.snapshot.items;
   const currentItemsMatch = !latestSnapshot || (latestSnapshot.length === log?.items.length &&
     latestSnapshot.every((item, index) => item.position === log?.items[index]?.position && item.content === log?.items[index]?.content));
   const currentSteps = log?.approvalSteps.filter((step) =>
@@ -81,7 +94,7 @@ export function LogDetailPage({ backTo = "/leader/logs", canBackfill = false, ca
           <h2>第 {number} 次提交的批注与回复</h2>
           {positions.map((position) => <div className="past-comment-item" key={position}>
             <strong>原第 {position} 项工作</strong>
-            <p>{log.versions?.[number - 1]?.find((item) => item.position === position)?.content ?? "原工作内容未保存"}</p>
+            <p>{versions[number - 1]?.snapshot.items.find((item) => item.position === position)?.content ?? "原工作内容未保存"}</p>
             <ItemCommentThread steps={steps} itemPosition={position}
               onReply={canReply ? replyToComment : undefined} />
           </div>)}

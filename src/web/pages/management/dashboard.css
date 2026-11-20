@@ -1,0 +1,49 @@
+/* 公司总览 · 主次布局 + 结论条
+   统计卡 / 表格 / 占比条 / 趋势折线 / 加载·空·异常状态已统一到
+   src/web/components/data/，本文件只保留总览页独有的布局与读数排版。
+   令牌、圆角、动效三档全部引用 styles.css；减少动效由全局 reduce 媒体查询接管。 */
+
+.ov-period { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--subtle); }
+.ov-period button { min-height: 32px; padding: 4px 14px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; white-space: nowrap; transition: background-color var(--dur-hover) var(--ease-standard), color var(--dur-hover) var(--ease-standard); }
+.ov-period button[aria-pressed="true"] { background: var(--paper); color: var(--forest); font-weight: 500; box-shadow: var(--shadow); }
+.ov-period button:focus-visible { outline: 2px solid var(--forest-2); outline-offset: 2px; }
+
+.ov-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr); gap: 20px; align-items: start; }
+.ov-hero, .ov-side-item {
+  min-width: 0; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); box-shadow: var(--shadow);
+  transition: border-color var(--dur-hover) var(--ease-standard), box-shadow var(--dur-hover) var(--ease-standard), transform var(--dur-press) var(--ease-out);
+}
+.ov-hero { padding: 24px 26px; }
+.ov-eyebrow { font-size: 12px; color: var(--muted); }
+.ov-hero-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 10px 0 4px; }
+.ov-value { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 40px; line-height: 1.1; letter-spacing: -.03em; color: var(--forest); }
+.ov-unit { font-size: 12px; color: var(--muted); }
+.ov-delta { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--r-xs); font-size: 12px; font-variant-numeric: tabular-nums; background: var(--subtle); color: var(--forest); white-space: nowrap; }
+.ov-delta.down { color: var(--red); }
+.ov-range { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+
+.ov-bars { display: grid; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+
+.ov-side { display: grid; gap: 12px; align-content: start; }
+.ov-side-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
+.ov-side-item span:first-child { color: var(--muted); font-size: 13px; }
+.ov-side-item strong { font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 500; color: var(--forest); white-space: nowrap; }
+.ov-side-note { padding: 14px 16px; font-size: 12px; color: var(--muted); line-height: 1.7; }
+.ov-side-note h2 { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
+.ov-side-note ul { margin: 6px 0 0; padding-left: 16px; }
+
+.ov-section-label { display: flex; align-items: center; gap: 10px; margin: 28px 0 12px; font-size: 12px; color: var(--muted); }
+.ov-section-label::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+.ov-brief { display: flex; align-items: flex-start; gap: 10px; padding: 14px 18px; margin-bottom: 16px; border: 1px solid var(--line); border-left: 2px solid var(--green); border-radius: var(--r-sm); background: var(--paper); font-size: 14px; line-height: 1.7; animation: ov-enter var(--dur-enter) var(--ease-out); }
+.ov-brief.warn { border-left-color: var(--warning-ink); }
+.ov-brief strong { font-weight: 600; }
+@keyframes ov-enter { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 1000px) {
+  .ov-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .ov-hero { padding: 18px; }
+  .ov-value { font-size: 34px; }
+}

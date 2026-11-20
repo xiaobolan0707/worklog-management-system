@@ -2,7 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "../../generated/prisma/client.js";
 import { appendAudit } from "../audit/audit.repository.js";
 import { beijingParts } from "../../shared/beijing-time.js";
-import { lockPersonnelTransition } from "../../shared/personnel-lock.js";
+import { lockPersonnelActivity, lockPersonnelTransition } from "../../shared/personnel-lock.js";
+import { archiveChecklist, archiveDeadline, missingArchiveFields } from "../archives/archive-completion.js";
+import { availableArchive } from "../archives/archive.service.js";
 
 const DAY = 86_400_000;
 const staffRoles = ["EMPLOYEE", "LEADER", "MANAGEMENT"] as const;
@@ -65,6 +67,31 @@ const personnelSelect = {
   purgeAt: true, restoredAt: true, archivePurgingAt: true
 } as const;
 type PersonnelRow = Prisma.UserGetPayload<{ select: typeof personnelSelect }>;
+const completionSelect = {
+  displayName: true, gender: true, departmentId: true, hireDate: true, employeeNumber: true,
+  archiveAttachments: { where: { deletedAt: null }, select: { category: true } }
+} as const;
+const staffArchive = { ...availableArchive, role: { in: [...staffRoles] } };
+const eligibleArchive = { ...staffArchive, employmentStatus: "ACTIVE", accountStatus: "ACTIVE" } as const;
+const trackingSelect = {
+  ...completionSelect, id: true, department: { select: { name: true } }, createdAt: true,
+  employmentStatus: true, accountStatus: true
+} as const;
+
+function archiveTracking(row: Prisma.UserGetPayload<{ select: typeof trackingSelect }>, activation: Date | null, now: Date) {
+  const checklist = archiveChecklist(row);
+  const complete = checklist.fields.every((item) => item.complete) && checklist.documents.every((item) => item.submitted);
+  const eligible = row.employmentStatus === "ACTIVE" && row.accountStatus === "ACTIVE";
+  const deadline = archiveDeadline(row.createdAt, activation);
+  const archiveStatus = complete ? "COMPLETE" : !eligible ? "INACTIVE" : now >= deadline ? "OVERDUE" : "PENDING";
+  return {
+    summary: { id: row.id, displayName: row.displayName, departmentId: row.departmentId, departmentName: row.department?.name ?? null,
+      archiveStatus, archiveDeadline: deadline.toISOString(), canRemindArchive: eligible && !complete },
+    checklist
+  };
+}
+const manualReminderKind = "ARCHIVE_OVERDUE";
+const manualReminderTitle = "人事提醒补齐档案";
 
 function publicPersonnel(user: PersonnelRow, activation: Date | null) {
   const { department, createdAt, hireDate, departureDate, ...rest } = user;
@@ -72,7 +99,7 @@ function publicPersonnel(user: PersonnelRow, activation: Date | null) {
     ...rest, departmentName: department?.name ?? null,
     hireDate: hireDate?.toISOString().slice(0, 10) ?? null,
     departureDate: departureDate?.toISOString().slice(0, 10) ?? null,
-    archiveDeadline: new Date(Math.max(createdAt.getTime(), activation?.getTime() ?? 0) + 7 * DAY).toISOString()
+    archiveDeadline: archiveDeadline(createdAt, activation).toISOString()
   };
 }
 
@@ -101,7 +128,7 @@ export class PersonnelService {
     requireRole(actor, "HR");
     const [employees, departments, managers, activation] = await Promise.all([
       this.database.user.findMany({
-        where: { deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null, role: { in: [...staffRoles] } },
+        where: staffArchive,
         select: personnelSelect, orderBy: [{ departmentId: "asc" }, { createdAt: "asc" }]
       }),
       this.database.department.findMany({ select: { id: true, name: true, employeeNumberPrefix: true }, orderBy: { name: "asc" } }),
@@ -112,6 +139,48 @@ export class PersonnelService {
       this.activation()
     ]);
     return { employees: employees.map((row) => publicPersonnel(row, activation)), departments, managers };
+  }
+
+  async listArchiveTracking(actor: PersonnelActor) {
+    requireRole(actor, "HR");
+    const [employees, activation] = await Promise.all([
+      this.database.user.findMany({ where: staffArchive, select: trackingSelect, orderBy: [{ displayName: "asc" }, { id: "asc" }] }),
+      this.activation()
+    ]);
+    const now = this.now();
+    return { employees: employees.map((row) => archiveTracking(row, activation, now).summary) };
+  }
+
+  async getArchiveTracking(actor: PersonnelActor, id: string) {
+    requireRole(actor, "HR");
+    const [employee, activation] = await Promise.all([
+      this.database.user.findFirst({ where: { ...staffArchive, id }, select: trackingSelect }),
+      this.activation()
+    ]);
+    if (!employee) throw new PersonnelError("NOT_FOUND", "未找到员工档案状态", 404);
+    const { summary, checklist } = archiveTracking(employee, activation, this.now());
+    return { employee: { ...summary, ...checklist } };
+  }
+
+  async remindArchive(actor: PersonnelActor, id: string) {
+    requireRole(actor, "HR");
+    return this.database.$transaction(async (tx) => {
+      await lockPersonnelActivity(tx);
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${id} FOR UPDATE`;
+      const employee = await tx.user.findFirst({ where: { id, ...eligibleArchive }, select: completionSelect });
+      if (!employee || missingArchiveFields(employee).length === 0) {
+        throw new PersonnelError("ARCHIVE_REMINDER_NOT_APPLICABLE", "该人员已补齐或当前不能补齐档案，请刷新列表", 409);
+      }
+      const deduplicationKey = `hr-archive:${id}:${beijingParts(this.now()).date}`;
+      const { count } = await tx.reminder.createMany({
+        data: { recipientId: id, kind: manualReminderKind, deduplicationKey, title: manualReminderTitle,
+          body: "您的员工档案尚未补齐，请前往「我的档案」查看补齐进度并完善资料。" },
+        skipDuplicates: true
+      });
+      if (count) await appendAudit(tx, { actorId: actor.id, subjectUserId: id, action: "HR_ARCHIVE_REMINDER_SENT",
+        entityType: "User", entityId: id, metadata: {} });
+      return { sent: count > 0 };
+    });
   }
 
   async update(actor: PersonnelActor, id: string, input: PersonnelUpdate) {
@@ -254,10 +323,13 @@ export class PersonnelService {
   private async clearPrivateData(tx: Prisma.TransactionClient, id: string, username: string, displayName: string | null, storageKeys: string[]) {
     const ownedLogs = { employeeId: id };
     const logs = await tx.dailyLog.findMany({ where: ownedLogs, select: { id: true, approvalSteps: { select: { id: true, replies: { select: { id: true } } } } } });
-    const contentIds = logs.flatMap((log) => [log.id, ...log.approvalSteps.flatMap((step) => [step.id, ...step.replies.map((reply) => reply.id)])]);
+    const plans = await tx.workPlan.findMany({ where: ownedLogs, select: { id: true } });
+    const contentIds = [...plans.map((plan) => plan.id), ...logs.flatMap((log) => [log.id, ...log.approvalSteps.flatMap((step) => [step.id, ...step.replies.map((reply) => reply.id)])])];
     // ColorChange uses RESTRICT, while log versions, items, approvals and replies cascade.
     await tx.colorChange.deleteMany({ where: { dailyLog: ownedLogs } });
     await tx.dailyLog.deleteMany({ where: ownedLogs });
+    await tx.workPlan.deleteMany({ where: ownedLogs });
+    await tx.workPlan.updateMany({ where: { ratedById: id }, data: { ratedById: null, note: null } });
     // Replies on other employees' logs belong to those employees, not to this approver.
     await tx.approvalStep.updateMany({ where: { approverId: id }, data: { comment: null, itemComments: Prisma.DbNull } });
     await tx.colorChange.updateMany({ where: { changedById: id }, data: { reason: "已清除" } });
@@ -324,8 +396,8 @@ export class PersonnelService {
     const activation = await this.activation();
     if (current.minutes < 9 * 60 || !activation) return 0;
     const employees = await this.database.user.findMany({
-      where: { employmentStatus: "ACTIVE", accountStatus: "ACTIVE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null, role: { in: [...staffRoles] } },
-      select: { id: true, displayName: true, gender: true, departmentId: true, department: { select: { name: true } }, hireDate: true, employeeNumber: true, createdAt: true, archiveAttachments: { where: { deletedAt: null }, select: { category: true } } }
+      where: eligibleArchive,
+      select: { ...completionSelect, id: true, department: { select: { name: true } }, createdAt: true }
     });
     const recipients = await this.database.user.findMany({
       where: { role: { in: ["HR", "LEADER"] }, employmentStatus: "ACTIVE", accountStatus: "ACTIVE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
@@ -333,10 +405,7 @@ export class PersonnelService {
     });
     let total = 0;
     for (const employee of employees) {
-      const deadline = Math.max(activation.getTime(), employee.createdAt.getTime()) + 7 * DAY;
-      const categories = new Set(employee.archiveAttachments.map((file) => file.category));
-      const complete = Boolean(employee.displayName?.trim() && employee.gender?.trim() && employee.departmentId && employee.hireDate && employee.employeeNumber && ["RESUME", "DEGREE", "AGREEMENT"].every((category) => categories.has(category as never)));
-      if (complete || now.getTime() < deadline) continue;
+      if (now < archiveDeadline(employee.createdAt, activation) || missingArchiveFields(employee).length === 0) continue;
       const targets = new Set([employee.id, ...recipients.filter((recipient) => recipient.role === "HR" || (employee.departmentId !== null && recipient.departmentId === employee.departmentId)).map((recipient) => recipient.id)]);
       for (const recipientId of targets) {
         const key = `${employee.id}:${current.date}`;

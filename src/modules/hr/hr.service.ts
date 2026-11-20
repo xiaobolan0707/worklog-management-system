@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import { beijingParts } from "../../shared/beijing-time.js";
+import { expectsLog, isSubmittedLog, submissionCalendar } from "../../shared/log-submission-calendar.js";
 import { appendAudit } from "../audit/audit.repository.js";
 import type { ReminderService } from "../reminders/reminder.service.js";
 import { SettingService, scheduleSettingsSchema } from "../settings/setting.service.js";
@@ -82,8 +83,7 @@ export class HrService {
       }),
       this.database.department.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } })
     ]);
-    const activatedAt = typeof activation?.value === "string" && Number.isFinite(Date.parse(activation.value))
-      ? new Date(activation.value) : now;
+    const calendar = submissionCalendar(now, activation?.value, settings);
     const logs = employees.length === 0 ? [] : await this.database.dailyLog.findMany({
       where: { employeeId: { in: employees.map((employee) => employee.id) }, workDate: { gte: new Date(from), lte: new Date(to < today ? to : today) } },
       select: statusSelect
@@ -93,15 +93,10 @@ export class HrService {
     let approvalRequired = 0;
     let finalApproved = 0;
     for (const employee of employees) {
-      const start = employee.hireDate ? dateValue(employee.hireDate)
-        : beijingParts(new Date(Math.max(employee.createdAt.getTime(), activatedAt.getTime()))).date;
-      const end = employee.departureDate ? dateValue(employee.departureDate) : null;
       for (let date = from; date <= to && date <= today; date = addDays(date, 1)) {
         const log = byEmployeeDate.get(`${employee.id}:${date}`);
-        const submitted = Boolean(log && log.status !== "DRAFT");
-        const expected = date >= start && (!end || date < end)
-          && !settings.logReminderExcludedDates.includes(date)
-          && !settings.logReminderExcludedWeekdays.includes(new Date(date).getUTCDay());
+        const submitted = isSubmittedLog(log?.status);
+        const expected = expectsLog(date, employee, calendar);
         if (!expected && !submitted) continue;
         const steps = submitted && log ? log.approvalSteps.filter((step) => step.submissionNumber === log.submissionCount && step.status !== "SUPERSEDED") : [];
         const returned = submitted && (log?.status === "RETURNED" || steps.some((step) => step.status === "RETURNED"));
@@ -190,5 +185,13 @@ export function hrStatusCsv(result: Awaited<ReturnType<HrService["status"]>>) {
   const headers = ["姓名", "部门", "工作日期", "应交", "提交状态", "审批状态", "当前审批人", "审批满72小时"];
   const values = result.rows.map((row) => [row.displayName, row.departmentName, row.workDate, row.expected,
     row.submissionStatus, row.approvalStatus, row.currentApproverName, row.approvalOverdue]);
-  return "\uFEFF" + [headers, ...values].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const { expected, submitted, finalApproved, overduePeople, submissionRate, approvalCompletionRate } = result.summary;
+  const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(1)}%`;
+  const summary = [
+    ["区间汇总", `${result.from} 至 ${result.to}`],
+    ["应交份数", expected], ["已交份数", submitted], ["提交率", percent(submissionRate)],
+    ["最终通过份数", finalApproved], ["审批完成率", percent(approvalCompletionRate)], ["逾期人数", overduePeople]
+  ];
+  const rows = [headers, ...values, [], ...summary];
+  return "\uFEFF" + rows.map((row) => [...row, ...Array<null>(headers.length - row.length).fill(null)].map(csvCell).join(",")).join("\r\n");
 }

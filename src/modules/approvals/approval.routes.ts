@@ -2,10 +2,15 @@ import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 
 import { AuthError, type AuthService } from "../auth/auth.service.js";
-import { ApprovalError, type ApprovalService } from "./approval.service.js";
+import { ApprovalError, type ApprovalActor, type ApprovalService } from "./approval.service.js";
 import { approvalDecisionSchema, colorChangeSchema, returnSchema } from "./approval.schemas.js";
 
 const paramsSchema = z.object({ logId: z.string().min(1).max(191) });
+// PERF-03：待审队列分页，避免一次渲染上百封信纸卡片把浏览器卡死。
+const pendingQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(20).default(10)
+});
 
 function sendError(reply: FastifyReply, error: unknown) {
   if (error instanceof ApprovalError || error instanceof AuthError) {
@@ -22,15 +27,28 @@ export const approvalRoutes: FastifyPluginAsync<{
   authService: AuthService;
 }> = async (app, options) => {
   const leaderOnly = app.requireRole("LEADER", "MANAGEMENT", "ADMIN");
+  // 审批范围由角色 + 本部门决定：管理层/管理员全公司，领导本部门（见 canActOnStep）。
+  const actorOf = (request: Parameters<typeof app.requireUser>[0]): ApprovalActor => {
+    const user = request.authenticated!.user;
+    return { id: user.id, role: user.role as ApprovalActor["role"], departmentId: user.departmentId ?? null };
+  };
   const csrf = (request: Parameters<typeof options.authService.verifyCsrf>[0] extends never ? never : any) =>
     options.authService.verifyCsrf(
       request.authenticated,
       request.headers["x-csrf-token"] as string | undefined
     );
 
-  app.get("/api/approvals/pending", { preHandler: leaderOnly }, async (request) => ({
-    logs: await options.approvalService.listPending(request.authenticated!.user.id)
-  }));
+  app.get("/api/approvals/pending", { preHandler: leaderOnly }, async (request) => {
+    const { page, pageSize } = pendingQuerySchema.parse(request.query);
+    const pending = await options.approvalService.listPending(actorOf(request));
+    const start = (page - 1) * pageSize;
+    return {
+      logs: pending.slice(start, start + pageSize),
+      total: pending.length,
+      page,
+      pageSize
+    };
+  });
 
   app.post("/api/approvals/:logId/approve", { preHandler: leaderOnly }, async (request, reply) => {
     try {
@@ -40,7 +58,7 @@ export const approvalRoutes: FastifyPluginAsync<{
       return {
         log: await options.approvalService.approveCurrentStep(
           logId,
-          request.authenticated!.user.id,
+          actorOf(request),
           input.color,
           input.itemComments
         )
@@ -58,7 +76,7 @@ export const approvalRoutes: FastifyPluginAsync<{
       return {
         log: await options.approvalService.returnCurrentStep(
           logId,
-          request.authenticated!.user.id,
+          actorOf(request),
           itemComments
         )
       };
@@ -75,7 +93,7 @@ export const approvalRoutes: FastifyPluginAsync<{
       return {
         log: await options.approvalService.changeReviewedColor(
           logId,
-          request.authenticated!.user.id,
+          actorOf(request),
           input.color,
           input.reason
         )

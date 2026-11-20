@@ -1,0 +1,15 @@
+/* 员工排行榜 · 独立页面（对照正式版界面）
+   榜单卡片本体在 components/data/RankCard（与奖惩确认共用），
+   令牌、圆角、动效三档全部沿用 styles.css；减少动效由全局 reduce 媒体查询接管。 */
+
+.lb-filters { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; margin-bottom: 18px; }
+.lb-filters .field { min-width: 180px; max-width: 220px; }
+.lb-range { color: var(--muted); font-size: 12px; margin: 6px 0 14px; }
+
+.lb-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.lb-section-label { font-size: 12px; color: var(--muted); margin: 22px 0 12px; }
+
+@media (max-width: 760px) {
+  .lb-grid { grid-template-columns: minmax(0, 1fr); }
+  .lb-filters .field { flex: 1 1 150px; max-width: none; }
+}

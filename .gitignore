@@ -15,3 +15,50 @@ work/
 *.zip
 员工工作日志管理系统-源码-*/
 
+# 本地密钥与证书
+/infra/nginx/certs/
+*.pem
+*.key
+*.pfx
+*.p12
+
+# 现网验证产物与硬编码凭据
+/prod-verify.mjs
+/prod-verify/
+/prod-shots/
+/prod-login.png
+/prod-register.png
+/prod-*.png
+
+# 运行数据、发布快照与校验文件
+/data/
+/release/
+/archive/
+/*.sha256
+
+# 本地工具/构建暂存目录
+/.agents/
+/.approval-build-current/
+/.codebuddy/
+/.compare/
+/.deploy-ui2/
+/.restore/
+/.taste-skill/
+/.thin/
+/.unify-work/
+/.workbuddy/
+/.zcode/
+/ui-lab/
+/ui2-parts/
+/web/
+/shots-before/
+/shots-after/
+/motion-candidates.html
+
+# 历史安全修复包
+/worklog-security-fix-20261105/
+/worklog-security-fix-v2/
+
+# 本机启动脚本
+/启动*.cmd
+

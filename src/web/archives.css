@@ -11,8 +11,58 @@
 /* I6: the base name truncates, the extension never does. */
 .archive-files .file-base { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .archive-files .file-ext { flex: 0 0 auto; }
-.archive-upload { max-width: 480px; }
-.archive-upload input { max-width: 100%; font: inherit; padding: 10px 0; }
+/* 档案附件上传入口 —— neumorphic-ui / 模式 4「文件上传」
+   层级：分类标题 + 编号 → 内凹入口（凹槽）→ 凸起胶囊按钮 → 真实容量进度条 → 状态文字 → 说明。
+   全部映射现有 --neu-* / --r-* / --dur-* 令牌，换皮时自动跟随；
+   一个视觉分组只用一层边框（ai-ui-polish I3），内外圆角按 R_outer = R_inner + gap 收敛。 */
+.au-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.au-head h3 { margin: 0; }
+.au-tag { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 11px; letter-spacing: .06em; color: var(--muted); white-space: nowrap; }
+
+.au-well {
+  display: grid; justify-items: center; gap: 12px;
+  padding: 24px 20px 18px; border-radius: var(--r-lg);
+  background: var(--neu-well); box-shadow: var(--neu-pressed);
+}
+.au-trigger-wrap { position: relative; display: inline-flex; }
+.au-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.au-input:disabled { cursor: not-allowed; }
+.au-trigger {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 8px 20px; border-radius: 999px;
+  background: var(--paper); color: var(--forest); font-size: 13px; font-weight: 500;
+  box-shadow: var(--neu-raised);
+  transition: transform var(--dur-press) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-standard),
+    color var(--dur-hover) var(--ease-standard);
+}
+.au-trigger svg { flex: 0 0 auto; }
+.au-trigger-wrap:hover .au-trigger { transform: translateY(-1px); }
+.au-trigger-wrap:active .au-trigger { transform: translateY(1px); box-shadow: var(--neu-pressed); }
+.au-input:focus-visible + .au-trigger { outline: 2px solid var(--forest-2, #27634f); outline-offset: 3px; }
+.au-input:disabled + .au-trigger { opacity: .55; box-shadow: none; cursor: not-allowed; }
+.au-trigger.au-success { color: var(--green, #24774d); animation: au-rebound var(--dur-enter) var(--ease-out); }
+@keyframes au-rebound { from { transform: translateY(1px) scale(.985); } to { transform: none; } }
+.au-readonly { padding: 10px 0; font-size: 13px; color: var(--muted); }
+
+.au-track { width: min(240px, 76%); height: 6px; border-radius: 999px; background: var(--line-soft); overflow: hidden; }
+.au-fill { height: 100%; border-radius: 999px; background: var(--forest-2, #27634f); transition: width var(--dur-enter) var(--ease-out); }
+.au-status { margin: 0; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.au-status.au-error { color: var(--red); }
+
+/* 处理中只收拢当前分类的文件卡片，不做假进度；容量进度条始终由真实份数驱动 */
+.archive-files { transition: opacity var(--dur-enter) var(--ease-out), transform var(--dur-enter) var(--ease-out); }
+.archive-attachment-group[aria-busy="true"] .archive-files { opacity: .6; transform: scale(.995); }
+
+@media (prefers-reduced-motion: reduce) {
+  .au-trigger, .au-fill, .archive-files { transition: none; animation: none; }
+  .au-trigger-wrap:hover .au-trigger, .au-trigger-wrap:active .au-trigger { transform: none; }
+}
+@media (max-width: 600px) {
+  .au-well { padding: 18px 14px 14px; }
+  .au-head { flex-wrap: wrap; gap: 6px; }
+  .au-tag { font-size: 10px; }
+}
 .archive-filter { max-width: 300px; margin-bottom: 24px; }
 .hr-filters { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)); gap: 20px; align-items: end; margin-bottom: 24px; }
 .hr-filters .field { margin-bottom: 0; }
@@ -21,7 +71,7 @@
 .archive-log-picker [aria-pressed="true"] { outline: 2px solid var(--forest, #194c3d); outline-offset: 3px; }
 .archive-historical-log { margin-top: 24px; }
 .archive-log-version { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line, #d5dfd8); }
-.archive-log-version summary { cursor: pointer; min-height: 44px; color: var(--forest, #194c3d); font-weight: 600; }
+.archive-log-version summary { cursor: pointer; min-height: 40px; color: var(--forest); font-weight: 500; }
 .danger-action { color: #9a302a !important; }
 @media (max-width: 760px) {
   .hr-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }

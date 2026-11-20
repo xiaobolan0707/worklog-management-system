@@ -2,7 +2,11 @@ import type { PrismaClient } from "../../generated/prisma/client.js";
 import { appendAudit, type AuditInput } from "../audit/audit.repository.js";
 import { periodRange, type PeriodType, type ReportService } from "./report.service.js";
 
-export function recommendReward(counts: { redCount: number; grayCount: number }) {
+export type RewardRecommendation = "REWARD" | "IMPROVEMENT" | "INSUFFICIENT_DATA";
+
+export function recommendReward(counts: { redCount: number; grayCount: number }): RewardRecommendation {
+  // INFO-01：没有任何已归档日志时不应得出"奖励"结论，避免误导奖惩决策。
+  if (counts.redCount + counts.grayCount <= 0) return "INSUFFICIENT_DATA";
   return counts.grayCount > 0 && counts.grayCount >= counts.redCount ? "IMPROVEMENT" as const : "REWARD" as const;
 }
 
@@ -41,6 +45,9 @@ export class RewardService {
       [input.employeeId], input.periodType, input.periodStart
     );
     const outcome = recommendReward({ redCount, grayCount });
+    if (outcome === "INSUFFICIENT_DATA") {
+      throw new RewardError(400, "INSUFFICIENT_DATA", "该统计周期内没有已归档日志，暂无法生成奖惩结论");
+    }
     const decision = await this.repository.saveDecision({ ...input, redCount, grayCount, decidedById: actorId, outcome });
     await this.repository.appendAudit({
       actorId,

@@ -5,12 +5,17 @@ import { LetterLog, type LetterLogItem } from "../../components/logs/LetterLog.j
 import { ApprovalProgress, ItemCommentThread, type ApprovalStepView } from "../../components/logs/ApprovalProgress.js";
 
 interface BinEmployee { id: string; displayName: string | null; departmentName: string | null; recycledAt: string | null; purgeAt: string | null; archivePurgingAt: string | null }
+interface BinPlan { id: string; workDate: string; target: string; dueAt: string | null; status: "DRAFT" | "SUBMITTED" | "RATED"; rating: "MET" | "DELAYED" | "UNMET" | null; note: string | null }
+const planStatus = { DRAFT: "草稿", SUBMITTED: "待评星", RATED: "已评星" };
+const planRatings = { MET: "达成", DELAYED: "延期完成", UNMET: "未达成" };
 interface BinLog { id: string; employeeName: string; workDate: string; isBackfill: boolean; backfillReason: string | null; planTarget: string | null; planDueAt: string | null; items: LetterLogItem[]; approvalSteps: ApprovalStepView[]; versions: LetterLogItem[][] }
 export function RecycleBinPage() {
   const [employees, setEmployees] = useState<BinEmployee[]>([]);
   const [selected, setSelected] = useState<BinEmployee | null>(null);
   const [logs, setLogs] = useState<BinLog[]>([]);
   const [log, setLog] = useState<BinLog | null>(null);
+  const [plans, setPlans] = useState<BinPlan[] | null>(null);
+  const [plansError, setPlansError] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
@@ -19,9 +24,19 @@ export function RecycleBinPage() {
   const [reload, setReload] = useState(0);
   useEffect(() => { let active = true; setLoading(true); setError(""); void apiRequest<{ employees: BinEmployee[] }>("/recycle-bin").then((result) => { if (active) setEmployees(result.employees); }).catch((cause) => { if (active) setError(requestMessage(cause, "回收站加载失败")); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [reload]);
   useEffect(() => { setLogs([]); setLog(null); if (!selected) return; let active = true; setLogsLoading(true); void apiRequest<{ logs: BinLog[] }>(`/recycle-bin/${selected.id}/logs`).then((result) => { if (active) setLogs(result.logs); }).catch((cause) => { if (active) setError(requestMessage(cause, "历史日志加载失败")); }).finally(() => { if (active) setLogsLoading(false); }); return () => { active = false; }; }, [selected]);
+  useEffect(() => {
+    setPlans(null);
+    setPlansError("");
+    if (!selected) return;
+    let active = true;
+    void apiRequest<{ plans: BinPlan[] }>(`/recycle-bin/${selected.id}/plans`)
+      .then((result) => { if (active) setPlans(result.plans); })
+      .catch((cause) => { if (active) setPlansError(requestMessage(cause, "历史工作计划加载失败")); });
+    return () => { active = false; };
+  }, [selected, reload]);
   async function act(employee: BinEmployee, purge: boolean) {
     const name = employee.displayName ?? "该员工";
-    if (!window.confirm(purge ? `确定彻底删除“${name}”的档案、附件及本人历史日志吗？此操作无法恢复。` : `确定恢复“${name}”的历史资料吗？恢复不会自动复职或启用账号。`)) return;
+    if (!window.confirm(purge ? `确定彻底删除“${name}”的档案、附件、历史日志及工作计划吗？此操作无法恢复。` : `确定恢复“${name}”的历史资料吗？恢复不会自动复职或启用账号。`)) return;
     setBusy(true); setError(""); setNotice("");
     try { await apiRequest(`/recycle-bin/${employee.id}${purge ? "" : "/restore"}`, { method: purge ? "DELETE" : "POST", ...(purge ? { body: JSON.stringify({ confirm: true }) } : {}) }); setSelected(null); setNotice(purge ? `“${name}”的资料已彻底删除` : `“${name}”的历史资料已恢复，账号仍保持原任职与启停状态`); setReload((n) => n + 1); }
     catch (cause) { setError(requestMessage(cause, purge ? "彻底删除失败，请重试" : "恢复失败，请重试")); } finally { setBusy(false); }
@@ -33,6 +48,16 @@ export function RecycleBinPage() {
         {log && <div className="archive-historical-log"><h3>{log.workDate} 工作日志</h3>{log.isBackfill && <p>补写原因：{log.backfillReason}</p>}{log.planTarget && <p>工作计划：{log.planTarget} · 截止时间：{archiveDate(log.planDueAt)}</p>}<LetterLog items={log.items} employeeName={log.employeeName} workDate={log.workDate} renderCommentColumn={(item, index) => <ItemCommentThread steps={log.approvalSteps} itemPosition={item.position ?? index + 1} />} /><ApprovalProgress steps={log.approvalSteps} />
           {log.versions.map((items, index) => <details className="archive-log-version" key={index}><summary>第 {index + 1} 次提交内容</summary><LetterLog items={items} employeeName={log.employeeName} workDate={log.workDate} renderCommentColumn={(item, position) => <ItemCommentThread steps={log.approvalSteps.filter((step) => (step.submissionNumber ?? log.versions.length) === index + 1)} itemPosition={item.position ?? position + 1} />} /></details>)}
         </div>}
+      </section>
+      <section className="panel"><h2>历史工作计划</h2>
+        {plansError ? <p role="alert" className="form-error">{plansError} <button className="btn secondary" onClick={() => setReload((n) => n + 1)}>重试加载计划</button></p> : !plans ? <p role="status">正在加载历史工作计划…</p> : plans.length === 0 ? <p className="muted">该员工没有工作计划。</p> : <ul>
+          {plans.map((plan) => <li key={plan.id}><strong>{archiveDate(plan.workDate)} · {planStatus[plan.status]}</strong>
+            <p>{plan.target}</p>
+            {plan.dueAt && <p>截止日期：{archiveDate(plan.dueAt)}</p>}
+            {plan.rating && <p>评星结果：{planRatings[plan.rating]}</p>}
+            {plan.note && <p>评语：{plan.note}</p>}
+          </li>)}
+        </ul>}
       </section></>}
   </main>;
 }

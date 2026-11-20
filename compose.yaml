@@ -27,7 +27,19 @@ services:
       PORT: 3000
       DATABASE_URL: "${DATABASE_URL:?请设置 DATABASE_URL}"
       SESSION_SECRET: "${SESSION_SECRET:?请设置 SESSION_SECRET}"
-      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      # SEC-01：默认开启 Secure Cookie 与 HTTPS 强制；明文验收必须显式打开逃生阀。
+      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
+      REQUIRE_HTTPS: "${REQUIRE_HTTPS:-true}"
+      ALLOW_INSECURE_HTTP: "${ALLOW_INSECURE_HTTP:-false}"
+      # SEC-03：自助注册默认关闭；开放可选两种模式：
+      # 1) REGISTRATION_OPEN=true 完全开放（无需邀请码，注册后仍须管理员启用）
+      # 2) REGISTRATION_INVITE_CODE 设置至少 8 位邀请码（定向发放）
+      REGISTRATION_OPEN: "${REGISTRATION_OPEN:-false}"
+      REGISTRATION_INVITE_CODE: "${REGISTRATION_INVITE_CODE:-}"
+      # SEC-05：登录尝试记录保留天数，超期由定时任务清理。
+      SECURITY_LOG_RETENTION_DAYS: "${SECURITY_LOG_RETENTION_DAYS:-180}"
+      # C03：单来源 IP 的登录聚合预算（次/分钟）。
+      LOGIN_IP_RATE_LIMIT_MAX: "${LOGIN_IP_RATE_LIMIT_MAX:-120}"
       ARCHIVE_STORAGE_DIR: /app/data/employee-archives
       ARCHIVE_LIFECYCLE_ENABLED: "${ARCHIVE_LIFECYCLE_ENABLED:-false}"
     volumes:
@@ -48,8 +60,11 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # 启动前请放入 fullchain.pem 与 privkey.pem（见 infra/scripts/generate-self-signed-cert.sh）。
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
     depends_on:
       app:
         condition: service_healthy
@@ -72,9 +87,12 @@ services:
       BACKUP_DIR: /backups
       BACKUP_RETENTION_DAYS: "${BACKUP_RETENTION_DAYS:-30}"
       BACKUP_INTERVAL_SECONDS: "${BACKUP_INTERVAL_SECONDS:-86400}"
+      # N02：数据库与员工附件卷成对备份/恢复；恢复时沿用同一挂载。
+      ARCHIVE_DIR: /archives
     volumes:
       - ./infra/scripts:/scripts:ro
       - postgres-backups:/backups
+      - employee-archives:/archives
     entrypoint: ["/bin/sh", "/scripts/backup-entrypoint.sh"]
     depends_on:
       postgres:

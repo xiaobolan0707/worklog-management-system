@@ -11,6 +11,9 @@ import { HrService } from "./modules/hr/hr.service.js";
 import { hrRoutes } from "./modules/hr/hr.routes.js";
 import { PersonnelService } from "./modules/personnel/personnel.service.js";
 import { personnelRoutes } from "./modules/personnel/personnel.routes.js";
+import { PlanService } from "./modules/plans/plan.service.js";
+import { planRoutes } from "./modules/plans/plan.routes.js";
+import { statusRoutes } from "./modules/status/status.routes.js";
 
 import type { AppEnv } from "./config/env.js";
 import { auditRoutes } from "./modules/audit/audit.routes.js";
@@ -67,6 +70,7 @@ import { schedulerPlugin } from "./plugins/scheduler.js";
 
 export interface BuildAppOptions {
   database?: PrismaClient;
+  webRoot?: string | undefined;
   archiveStorage?: ArchiveStorage;
   env: AppEnv;
   now?: () => Date;
@@ -97,9 +101,10 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const reportRepository = options.reportRepository ?? new PrismaReportRepository(database!, () => settingService.get());
   const rewardRepository = options.rewardRepository ?? new PrismaRewardRepository(database!);
   const auditQueryRepository = options.auditQueryRepository ?? new PrismaAuditQueryRepository(database!);
-  const authService = new AuthService(authRepository, options.now);
+  const authService = new AuthService(authRepository, options.now, options.env.SESSION_SECRET);
   const userService = new UserService(administrationRepository);
   const approverService = new ApproverService(administrationRepository);
+  const planService = new PlanService(database!, approverService, options.now);
   const settingService = new SettingService(administrationRepository);
   const logService = new LogService(logRepository, approverService, options.now);
   const approvalService = new ApprovalService(approvalRepository);
@@ -117,6 +122,42 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     app.addHook("onClose", async () => database.$disconnect());
   }
 
+  // SEC-11：统一安全响应头，覆盖 API 与静态资源，避免仅依赖网关配置。
+  app.addHook("onSend", async (request, reply) => {
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("X-Frame-Options", "DENY");
+    reply.header("Referrer-Policy", "strict-origin-when-cross-origin");
+    reply.header("Content-Security-Policy", [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self'"
+    ].join("; "));
+    if (options.env.NODE_ENV === "production" && options.env.COOKIE_SECURE) {
+      reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+  });
+
+  // SEC-01：生产环境拒绝经明文 HTTP 接入的请求（由反向代理透传协议）。
+  if (options.env.NODE_ENV === "production" && options.env.REQUIRE_HTTPS) {
+    app.addHook("onRequest", async (request, reply) => {
+      if (request.url === "/api/health") return;
+      const forwarded = request.headers["x-forwarded-proto"];
+      const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+      const protocol = value?.split(",")[0]?.trim().toLowerCase();
+      if (protocol === "http") {
+        request.log.warn({ ip: request.ip, url: request.url }, "rejected plain-HTTP request");
+        return reply.code(403).send({ code: "HTTPS_REQUIRED", message: "请通过 HTTPS 访问系统" });
+      }
+    });
+  }
+
   await app.register(errorHandlerPlugin);
   await app.register(cookie);
   await app.register(rateLimitPlugin);
@@ -127,12 +168,25 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   await app.register(archiveRoutes, { archiveService, authService });
   await app.register(hrRoutes, { hrService, authService });
   await app.register(personnelRoutes, { personnelService, authService });
+  await app.register(planRoutes, { planService, authService });
+  await app.register(statusRoutes, { database: database!, settings: settingService, now: options.now });
   await app.register(settingRoutes, { settingService, authService });
   await app.register(logRoutes, { logService, authService });
   await app.register(approvalRoutes, { approvalService, authService });
   await app.register(reminderRoutes, { reminderService, authService });
+  // SEC-05：安全日志保留期清理，每 6 小时执行一次，避免无限增长拖慢审计查询。
+  let lastSecurityMaintenance = 0;
   await app.register(schedulerPlugin, {
     jobs: reminderJobs,
+    runSecurityMaintenance: async (now) => {
+      if (!database || now.getTime() - lastSecurityMaintenance < 6 * 3_600_000) return;
+      lastSecurityMaintenance = now.getTime();
+      const cutoff = new Date(now.getTime() - options.env.SECURITY_LOG_RETENTION_DAYS * 86_400_000);
+      const removed = await database.loginAttempt.deleteMany({ where: { createdAt: { lt: cutoff } } });
+      if (removed.count > 0) {
+        app.log.info({ removed: removed.count, cutoff }, "expired login attempts purged");
+      }
+    },
     runPersonnel: async (now) => {
       const report = await personnelService.runJobs(now, !options.env.ARCHIVE_LIFECYCLE_ENABLED);
       for (const error of report.errors) app.log.error(error);
@@ -155,7 +209,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
   if (options.env.NODE_ENV === "production") {
     await app.register(staticFiles, {
-      root: fileURLToPath(new URL("../web", import.meta.url)),
+      root: options.webRoot ?? fileURLToPath(new URL("../web", import.meta.url)),
       wildcard: false
     });
     app.setNotFoundHandler((request, reply) => {

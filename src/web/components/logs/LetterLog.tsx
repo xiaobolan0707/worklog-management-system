@@ -1,11 +1,14 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 export interface LetterImage {
   id: string;
   name: string;
   type: "image/jpeg" | "image/png" | "image/webp";
   size: number;
-  dataUrl: string;
+  /** 内联 base64；编辑态与单篇详情仍使用该字段。 */
+  dataUrl?: string | undefined;
+  /** 按需加载地址；待审列表只下发该地址，避免响应体内联大量 base64。 */
+  url?: string | undefined;
 }
 
 export interface LetterLogItem {
@@ -16,16 +19,60 @@ export interface LetterLogItem {
   images?: LetterImage[] | undefined;
 }
 
+/** 页面内放大预览：不新开标签，点击遮罩、关闭按钮或按 Esc 退出。 */
 export function LetterImages({ images = [] }: { images?: LetterImage[] | undefined }) {
+  const [preview, setPreview] = useState<{ source: string; name: string } | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+
+  const close = useCallback(() => {
+    setPreview(null);
+    openerRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!preview) return;
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+    document.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [preview, close]);
+
   if (images.length === 0) return null;
   return (
-    <div className="letter-images">
-      {images.map((image) => (
-        <a href={image.dataUrl} target="_blank" rel="noreferrer" key={image.id}>
-          <img src={image.dataUrl} alt={image.name} />
-        </a>
-      ))}
-    </div>
+    <>
+      <div className="letter-images">
+        {images.map((image) => {
+          const source = image.url ?? image.dataUrl;
+          if (!source) return null;
+          return (
+            <button
+              type="button"
+              className="letter-image-button"
+              onClick={(event) => { openerRef.current = event.currentTarget; setPreview({ source, name: image.name }); }}
+              aria-label={`放大查看：${image.name}`}
+              key={image.id}
+            >
+              <img src={source} alt={image.name} loading="lazy" decoding="async" />
+            </button>
+          );
+        })}
+      </div>
+      {preview && (
+        <div className="image-lightbox" role="dialog" aria-modal="true" aria-label={`查看原图：${preview.name}`} onClick={close}>
+          <figure onClick={(event) => event.stopPropagation()}>
+            <img src={preview.source} alt={preview.name} />
+            <figcaption>{preview.name}</figcaption>
+          </figure>
+          <button ref={closeRef} type="button" className="image-lightbox-close" onClick={close} aria-label="关闭预览">×</button>
+        </div>
+      )}
+    </>
   );
 }
 

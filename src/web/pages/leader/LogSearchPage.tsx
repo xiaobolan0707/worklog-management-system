@@ -46,7 +46,7 @@ export function LogSearchPage() {
         <button className="btn secondary" type="submit">搜索</button>
       </form>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="table-wrap"><table><thead><tr><th>日期</th><th>员工</th><th>状态</th><th>颜色</th><th>操作</th></tr></thead><tbody>
+      <div className="table-wrap"><table><thead><tr><th>日期</th><th>员工</th><th>状态</th><th>核查结果</th><th>操作</th></tr></thead><tbody>
         {logs.map((log) => <tr key={log.id}><td>{log.workDate}</td><td>{log.employeeName}</td><td>{logStatusLabels[log.status] ?? log.status} {log.isBackfill && <span className="backfill-tag">补写</span>}</td><td><StatusBadge color={log.color} /></td><td><Link className="text-link" to={`/leader/logs/${log.id}`}>查看完整信纸</Link></td></tr>)}
       </tbody></table></div>
       <div className="form-actions">

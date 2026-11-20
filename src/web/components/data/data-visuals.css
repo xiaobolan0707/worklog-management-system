@@ -1,0 +1,115 @@
+/* 统一数据展示组件：统计卡 / 异步状态 / 表格 / 占比条 / 趋势折线
+   全部引用 styles.css 的语义令牌；动效三档与减少动效沿用全局约定。
+   状态色与奖牌色由 pearl-skin.css 覆盖，换皮时自动跟随。 */
+
+.dv-grid { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.dv-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dv-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.dv-stat {
+  min-width: 0; padding: 16px 20px; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--paper); box-shadow: var(--shadow);
+  transition: border-color var(--dur-hover) var(--ease-standard), box-shadow var(--dur-hover) var(--ease-standard);
+}
+.dv-stat-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.dv-stat-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.dv-stat-value {
+  font-family: ui-monospace, "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums;
+  font-size: 28px; line-height: 1.2; color: var(--forest);
+}
+.dv-stat-unit { font-size: 12px; color: var(--muted); }
+.dv-stat-hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+
+.dv-tone-good .dv-stat-value, .dv-tone-good.dv-meter-fill { color: var(--green); }
+.dv-tone-red .dv-stat-value { color: var(--red); }
+.dv-tone-warning { background: var(--warning-soft); border-color: var(--warning-line); }
+.dv-tone-warning .dv-stat-value { color: var(--warning-ink); }
+
+.dv-state {
+  display: flex; align-items: center; gap: 12px; padding: 20px 22px;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper);
+  font-size: 13px; line-height: 1.6;
+}
+.dv-state-loading { color: var(--muted); }
+.dv-state-empty { color: var(--muted); justify-content: center; }
+.dv-state-error {
+  color: var(--red); background: var(--danger-soft); border-color: var(--danger-line);
+  justify-content: space-between; flex-wrap: wrap;
+}
+.dv-spinner {
+  flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid var(--line); border-top-color: var(--forest);
+  animation: dv-spin 800ms linear infinite;
+}
+@keyframes dv-spin { to { transform: rotate(360deg); } }
+
+.dv-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); }
+.dv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dv-table th, .dv-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--line-soft); }
+.dv-table th { background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.dv-table tbody tr:last-child td { border-bottom: 0; }
+.dv-table tbody tr:hover { background: var(--row-hover); }
+.dv-table td.num { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+.dv-caption { caption-side: top; text-align: left; padding: 0 0 10px; color: var(--muted); font-size: 12px; }
+
+.dv-meter { display: grid; grid-template-columns: 92px minmax(0, 1fr) 52px; align-items: center; gap: 12px; font-size: 12px; }
+.dv-meter-label { color: var(--ink); }
+.dv-meter-track { height: 20px; border-radius: var(--r-xs); background: var(--line-soft); overflow: hidden; }
+.dv-meter-fill {
+  height: 100%; border-radius: var(--r-xs); opacity: .88;
+  transition: width var(--dur-enter) var(--ease-out);
+  background: var(--forest);
+}
+.dv-meter-fill.dv-tone-red { background: var(--red); }
+.dv-meter-fill.dv-tone-warning { background: var(--warning-ink); }
+.dv-meter-fill.dv-tone-good { background: var(--green); }
+.dv-meter-value { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.dv-trend { display: block; width: 100%; height: auto; }.dv-trend .dv-gridline { stroke: var(--line-soft); stroke-width: 1; stroke-dasharray: 3 4; }
+.dv-trend .dv-axis { stroke: var(--line); stroke-width: 1; }
+.dv-trend .dv-line { fill: none; stroke: var(--forest); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.dv-trend .dv-dot { fill: var(--forest); }
+.dv-trend text { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 10px; fill: var(--muted); }
+
+@media (max-width: 1000px) {
+  .dv-grid, .dv-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .dv-grid, .dv-cols-2, .dv-cols-3 { grid-template-columns: minmax(0, 1fr); }
+  .dv-meter { grid-template-columns: 78px minmax(0, 1fr) 44px; gap: 8px; }
+  .dv-table th, .dv-table td { padding: 9px 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dv-spinner { animation: none; border-top-color: var(--forest); }
+  .dv-meter-fill, .dv-stat { transition: none; }
+}
+
+/* 名次榜卡片：员工排行榜（评星）与奖惩确认（日志红灰）共用 */
+.dv-rank {
+  min-width: 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--paper);
+}
+.dv-rank h2 { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 2px; }
+.dv-rank-caption { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+.dv-rank ol { list-style: none; margin: 6px 0 0; padding: 0; }
+.dv-rank li { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line-soft); }
+.dv-rank li:first-child { border-top: 0; }
+/* 姓名与部门同一行，保持一行一条的密度。 */
+.dv-rank-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.dv-rank-name small { margin-left: 6px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.dv-rank-value { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dv-rank-empty { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+
+.dv-rank-medal {
+  display: grid; place-items: center; flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  color: #fff; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums;
+  background: var(--red); border: 1px solid var(--medal-rim);
+}
+.dv-rank.gray .dv-rank-medal { background: var(--medal-slate); border-color: var(--medal-slate-line); }
+.dv-rank.red .dv-rank-medal.gold { background: var(--medal-gold); border-color: var(--medal-gold-line); }
+.dv-rank.red .dv-rank-medal.silver { background: var(--medal-silver); border-color: var(--medal-silver-line); }
+.dv-rank.red .dv-rank-medal.bronze { background: var(--medal-bronze); border-color: var(--medal-bronze-line); }
+
+@media (max-width: 600px) {
+  .dv-rank { padding: 16px; }
+}

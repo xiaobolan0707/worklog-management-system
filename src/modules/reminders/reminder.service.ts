@@ -30,7 +30,7 @@ export interface ReminderRecord extends ReminderInput {
 export interface ReminderRepository {
   createDeduplicated(input: ReminderInput): Promise<ReminderRecord>;
   listForRecipient(recipientId: string, onlyArchive?: boolean): Promise<ReminderRecord[]>;
-  markRead(recipientId: string, reminderId: string, readAt: Date): Promise<ReminderRecord | null>;
+  markRead(recipientId: string, reminderId: string, readAt: Date, onlyArchive?: boolean): Promise<ReminderRecord | null>;
   listMissingEmployeeIds(workDate: string): Promise<string[]>;
   listOverdueApprovalLeaderIds(now: Date): Promise<string[]>;
 }
@@ -81,8 +81,8 @@ export class ReminderService {
     return this.repository.listForRecipient(recipientId, onlyArchive);
   }
 
-  async markRead(recipientId: string, reminderId: string) {
-    const reminder = await this.repository.markRead(recipientId, reminderId, this.now());
+  async markRead(recipientId: string, reminderId: string, onlyArchive = false) {
+    const reminder = await this.repository.markRead(recipientId, reminderId, this.now(), onlyArchive);
     if (!reminder) throw new ReminderError(404, "REMINDER_NOT_FOUND", "提醒不存在");
     return reminder;
   }
@@ -115,9 +115,9 @@ export class PrismaReminderRepository implements ReminderRepository {
     });
   }
 
-  async markRead(recipientId: string, reminderId: string, readAt: Date) {
+  async markRead(recipientId: string, reminderId: string, readAt: Date, onlyArchive = false) {
     const changed = await this.database.reminder.updateMany({
-      where: { id: reminderId, recipientId },
+      where: { id: reminderId, recipientId, ...(onlyArchive ? { kind: "ARCHIVE_OVERDUE" as const } : {}) },
       data: { readAt }
     });
     if (changed.count !== 1) return null;

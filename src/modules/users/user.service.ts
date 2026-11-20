@@ -3,7 +3,14 @@ import type { AuditInput } from "../audit/audit.repository.js";
 import { appendAudit as writeAudit } from "../audit/audit.repository.js";
 import type { AuthAccountStatus, AuthRole } from "../auth/auth.repository.js";
 import { hashPassword } from "../auth/password.js";
+import { passwordStrengthError } from "../auth/password-policy.js";
 import { lockPersonnelActivity } from "../../shared/personnel-lock.js";
+
+function addMonths(date: Date, months: number) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
 
 export interface AdminUserRecord {
   id: string;
@@ -43,6 +50,10 @@ export interface AdministrationRepository {
   setNumberPrefix?(departmentId: string, prefix: string | null): Promise<{ id: string; name: string; employeeNumberPrefix: string | null }>;
   listDepartmentEmployees(departmentId: string): Promise<AdminUserRecord[]>;
   updateEmployee(userId: string, expectedDepartmentId: string | null, input: { username?: string; displayName?: string; departmentId: string }): Promise<AdminUserRecord>;
+  /** 移出前的资格查询：需要同时看到在职状态与账号状态。 */
+  findDetachCandidate(userId: string): Promise<{ departmentId: string | null; role: AuthRole; employmentStatus: string; accountStatus: AuthAccountStatus } | null>;
+  /** 移出部门：只清空部门归属，工号字段原样保留。 */
+  detachEmployee(userId: string, expectedDepartmentId: string): Promise<{ user: AdminUserRecord; employeeNumberLabel: string | null }>;
   createUser(input: Omit<AdminUserRecord, "id">): Promise<AdminUserRecord>;
   registerEmployee(input: Omit<AdminUserRecord, "id">): Promise<AdminUserRecord>;
   deleteUser(actorId: string, userId: string): Promise<DeleteUserResult>;
@@ -51,6 +62,8 @@ export interface AdministrationRepository {
   replaceApprovers(employeeId: string, assignments: ApproverAssignmentInput[]): Promise<void>;
   listApprovers(employeeId: string): Promise<ApproverAssignmentInput[]>;
   listAuthorizedEmployeeIds(actorId: string): Promise<string[]>;
+  /** SEC-07：统计仍可登录的管理员数量，用于"最后一名管理员"保护。 */
+  countActiveAdmins(): Promise<number>;
   getSettings(): Promise<ScheduleSettings>;
   saveSettings(settings: ScheduleSettings, patch?: Partial<ScheduleSettings>): Promise<ScheduleSettings>;
   appendAudit(input: AuditInput): Promise<void>;
@@ -74,6 +87,21 @@ export function publicAdminUser(user: AdminUserRecord) {
 export class UserService {
   constructor(private readonly repository: AdministrationRepository) {}
 
+  private assertPasswordStrength(input: { password: string; username: string; displayName?: string | null | undefined }) {
+    const weakness = passwordStrengthError(input);
+    if (weakness) throw new AdministrationError(400, "PASSWORD_TOO_WEAK", weakness);
+  }
+
+  /** SEC-07：停用/删除/离职前调用，确保系统始终保有可运维的管理员。 */
+  private async assertNotLastAdmin(userId: string) {
+    const target = await this.repository.findUserById(userId);
+    if (!target || target.role !== "ADMIN" || target.accountStatus !== "ACTIVE") return;
+    const activeAdmins = await this.repository.countActiveAdmins();
+    if (activeAdmins <= 1) {
+      throw new AdministrationError(400, "LAST_ADMIN_REQUIRED", "系统至少需要保留一名可用管理员，请先新增或启用其他管理员账号");
+    }
+  }
+
   listUsers() {
     return this.repository.listUsers();
   }
@@ -89,7 +117,7 @@ export class UserService {
   }
 
   private async requireDepartmentAccess(actor: { id: string; role: AuthRole }, departmentId: string) {
-    if (!["ADMIN", "MANAGEMENT", "LEADER"].includes(actor.role)) {
+    if (!["ADMIN", "MANAGEMENT", "LEADER", "HR"].includes(actor.role)) {
       throw new AdministrationError(403, "FORBIDDEN", "无权管理员工");
     }
     if (actor.role === "LEADER") {
@@ -103,7 +131,7 @@ export class UserService {
 
   async listManagedDepartments(actor: { id: string; role: AuthRole }) {
     const departments = await this.repository.listDepartments();
-    if (actor.role === "ADMIN" || actor.role === "MANAGEMENT") return departments;
+    if (actor.role === "ADMIN" || actor.role === "MANAGEMENT" || actor.role === "HR") return departments;
     if (actor.role !== "LEADER") throw new AdministrationError(403, "FORBIDDEN", "无权查看部门员工");
     const leader = await this.repository.findUserById(actor.id);
     return departments.filter((department) => department.id === leader?.departmentId);
@@ -136,6 +164,61 @@ export class UserService {
     return updated;
   }
 
+  async removeDepartmentEmployee(actor: { id: string; role: AuthRole }, departmentId: string, userId: string) {
+    await this.requireDepartmentAccess(actor, departmentId);
+    const candidate = await this.repository.findDetachCandidate(userId);
+    if (!candidate || candidate.role !== "EMPLOYEE" || candidate.departmentId !== departmentId) {
+      throw new AdministrationError(404, "USER_NOT_FOUND", "该部门下不存在此员工，请刷新后重试");
+    }
+    // 仅「账号停用」或「已离职」的员工可以移出部门，避免误移在职人员。
+    if (candidate.employmentStatus !== "DEPARTED" && candidate.accountStatus !== "DISABLED") {
+      throw new AdministrationError(409, "EMPLOYEE_STILL_ACTIVE", "该员工账号仍在启用，请先停用账号或办理离职后再移出部门");
+    }
+    const { user, employeeNumberLabel } = await this.repository.detachEmployee(userId, departmentId);
+    // 工号不随移出部门释放：保留三个月，期间不复用、不清空。
+    const numberRetainedUntil = addMonths(new Date(), 3);
+    await this.repository.appendAudit({
+      actorId: actor.id, subjectUserId: userId, action: "EMPLOYEE_REMOVED_FROM_DEPARTMENT",
+      entityType: "User", entityId: userId,
+      metadata: { previousDepartmentId: departmentId, employeeNumberLabel, numberRetainedUntil: numberRetainedUntil.toISOString() }
+    });
+    return { user, employeeNumberLabel, numberRetainedUntil: numberRetainedUntil.toISOString() };
+  }
+
+  async listAssignableEmployees(actor: { id: string; role: AuthRole }) {
+    if (!["ADMIN", "MANAGEMENT", "LEADER", "HR"].includes(actor.role)) {
+      throw new AdministrationError(403, "FORBIDDEN", "无权查看员工");
+    }
+    // 取全部用户后过滤，这样「未分配部门」的员工也能出现在调入列表里。
+    const users = await this.repository.listUsers();
+    let rows = users.filter((user) => user.role === "EMPLOYEE");
+    if (actor.role === "LEADER") {
+      const leader = await this.repository.findUserById(actor.id);
+      rows = rows.filter((user) => user.departmentId === leader?.departmentId);
+    }
+    return rows.map((user) => ({
+      id: user.id, username: user.username, displayName: user.displayName, departmentId: user.departmentId ?? null
+    }));
+  }
+
+  async assignEmployee(actor: { id: string; role: AuthRole }, departmentId: string, employeeId: string) {
+    await this.requireDepartmentAccess(actor, departmentId);
+    const employee = await this.repository.findUserById(employeeId);
+    if (!employee || employee.role !== "EMPLOYEE") {
+      throw new AdministrationError(404, "USER_NOT_FOUND", "员工不存在，请刷新后重试");
+    }
+    if (employee.departmentId === departmentId) {
+      return { id: employee.id, username: employee.username, displayName: employee.displayName, departmentId: employee.departmentId };
+    }
+    const updated = await this.repository.updateEmployee(employeeId, employee.departmentId, { departmentId });
+    await this.repository.appendAudit({
+      actorId: actor.id, subjectUserId: employeeId, action: "EMPLOYEE_DEPARTMENT_ASSIGNED",
+      entityType: "User", entityId: employeeId,
+      metadata: { previousDepartmentId: employee.departmentId, departmentId }
+    });
+    return { id: updated.id, username: updated.username, displayName: updated.displayName, departmentId: updated.departmentId };
+  }
+
   async getEmployeeProfile(userId: string) {
     const user = await this.repository.findUserById(userId);
     if (!user || !["EMPLOYEE", "LEADER", "MANAGEMENT"].includes(user.role)) throw new AdministrationError(404, "USER_NOT_FOUND", "员工档案不存在");
@@ -144,6 +227,11 @@ export class UserService {
 
   async setOwnDepartment(userId: string, departmentId: string) {
     const user = await this.getEmployeeProfile(userId);
+    // SEC-08：部门是数据可见域边界，仅允许"尚未分配部门"的账号完成首次选择；
+    // 已有部门归属的账号必须由 ADMIN/HR 在管理端调整，避免员工自行切换可见域。
+    if (user.departmentId) {
+      throw new AdministrationError(403, "DEPARTMENT_CHANGE_FORBIDDEN", "所属部门已由管理员分配，如需调整请联系管理员或人事");
+    }
     await this.requireDepartment(departmentId);
     const updated = await this.repository.updateEmployee(userId, user.departmentId, { departmentId });
     await this.repository.appendAudit({ actorId: userId, subjectUserId: userId, action: "EMPLOYEE_DEPARTMENT_SELECTED", entityType: "User", entityId: userId,
@@ -159,17 +247,42 @@ export class UserService {
     return department;
   }
 
-  async registerEmployee(input: { username: string; displayName: string; password: string }) {
+  /**
+   * 自助注册（SEC-03/SEC-04）。
+   * 返回 null 表示该用户名已被占用：此时不创建账号、不向调用方泄露冲突细节，
+   * 仅留下审计记录供管理员核查，注册接口对所有情况返回一致响应。
+   */
+  async registerEmployee(input: { username: string; displayName: string; password: string }): Promise<AdminUserRecord | null> {
     const username = input.username.trim();
-    return this.repository.registerEmployee({
-      username,
-      displayName: input.displayName.trim(),
-      passwordHash: await hashPassword(input.password),
-      role: "EMPLOYEE",
-      accountStatus: "DISABLED",
-      departmentId: null,
-      mustChangePassword: false
-    });
+    const displayName = input.displayName.trim();
+    this.assertPasswordStrength({ password: input.password, username, displayName });
+    // 先完成哈希计算再判重，避免"用户名是否存在"通过耗时差异被推断。
+    const passwordHash = await hashPassword(input.password);
+    if (await this.repository.findUserByUsername(username)) {
+      await this.repository.appendAudit({
+        actorId: null,
+        action: "EMPLOYEE_REGISTRATION_CONFLICT",
+        entityType: "User",
+        entityId: username,
+        metadata: { username, displayName }
+      });
+      return null;
+    }
+    try {
+      return await this.repository.registerEmployee({
+        username,
+        displayName,
+        passwordHash,
+        role: "EMPLOYEE",
+        accountStatus: "DISABLED",
+        departmentId: null,
+        mustChangePassword: false
+      });
+    } catch (error) {
+      // 并发下由唯一约束兜底，同样不对外暴露冲突。
+      if (error instanceof AdministrationError && error.code === "USERNAME_EXISTS") return null;
+      throw error;
+    }
   }
 
   async createUser(
@@ -183,6 +296,7 @@ export class UserService {
     }
   ) {
     const username = input.username.trim();
+    this.assertPasswordStrength({ password: input.initialPassword, username, displayName: input.displayName });
     if (input.departmentId) await this.requireDepartment(input.departmentId);
     if (await this.repository.findUserByUsername(username)) {
       throw new AdministrationError(409, "USERNAME_EXISTS", "用户名已存在");
@@ -211,6 +325,7 @@ export class UserService {
     if (actorId === userId && status === "DISABLED") {
       throw new AdministrationError(400, "CANNOT_DISABLE_SELF", "不能停用当前登录的管理员账号");
     }
+    if (status === "DISABLED") await this.assertNotLastAdmin(userId);
     const user = await this.repository.setUserStatus(userId, status);
     await this.repository.appendAudit({
       actorId,
@@ -227,6 +342,7 @@ export class UserService {
     if (actorId === userId) {
       throw new AdministrationError(400, "CANNOT_DELETE_SELF", "不能删除当前登录的管理员账号");
     }
+    await this.assertNotLastAdmin(userId);
     const result = await this.repository.deleteUser(actorId, userId);
     if (!result) {
       throw new AdministrationError(404, "USER_NOT_FOUND", "用户不存在");
@@ -235,6 +351,9 @@ export class UserService {
   }
 
   async resetPassword(actorId: string, userId: string, initialPassword: string) {
+    const target = await this.repository.findUserById(userId);
+    if (!target) throw new AdministrationError(404, "USER_NOT_FOUND", "用户不存在");
+    this.assertPasswordStrength({ password: initialPassword, username: target.username, displayName: target.displayName });
     const user = await this.repository.resetPassword(
       userId,
       await hashPassword(initialPassword),
@@ -296,7 +415,7 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
   }
 
   listDepartmentEmployees(departmentId: string) {
-    return this.database.user.findMany({ where: { departmentId, role: "EMPLOYEE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null }, orderBy: { username: "asc" }, select: employeeSelect });
+    return this.database.user.findMany({ where: { departmentId, role: "EMPLOYEE", employmentStatus: "ACTIVE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null }, orderBy: { username: "asc" }, select: employeeSelect });
   }
 
   async renameDepartment(departmentId: string, name: string) {
@@ -309,6 +428,35 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
       }
       throw error;
     }
+  }
+
+  findDetachCandidate(userId: string) {
+    return this.database.user.findFirst({
+      where: { id: userId, deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
+      select: { departmentId: true, role: true, employmentStatus: true, accountStatus: true }
+    });
+  }
+
+  async detachEmployee(userId: string, expectedDepartmentId: string) {
+    return this.database.$transaction(async (transaction) => {
+      const changed = await transaction.user.updateMany({
+        where: { id: userId, departmentId: expectedDepartmentId, role: "EMPLOYEE", employmentStatus: "ACTIVE", deletedAt: null, recycledAt: null, archivePurgingAt: null, archivePurgedAt: null },
+        data: { departmentId: null }
+      });
+      if (changed.count !== 1) throw new AdministrationError(409, "EMPLOYEE_CHANGED", "员工所属部门已发生变化，请刷新后重试");
+      const user = await transaction.user.findFirst({ where: { id: userId, deletedAt: null }, select: employeeSelect });
+      if (!user) throw new AdministrationError(404, "USER_NOT_FOUND", "员工不存在，请刷新后重试");
+      const numbering = await transaction.user.findUnique({ where: { id: userId }, select: { employeeNumber: true, numberDepartmentId: true } });
+      let employeeNumberLabel: string | null = null;
+      if (numbering?.employeeNumber != null) {
+        const numberDepartment = numbering.numberDepartmentId
+          ? await transaction.department.findUnique({ where: { id: numbering.numberDepartmentId }, select: { name: true, employeeNumberPrefix: true } })
+          : null;
+        const prefix = numberDepartment?.employeeNumberPrefix || (numberDepartment?.name ? `${numberDepartment.name} ` : "");
+        employeeNumberLabel = `${prefix}${String(numbering.employeeNumber).padStart(4, "0")}`;
+      }
+      return { user, employeeNumberLabel };
+    });
   }
 
   async updateEmployee(userId: string, expectedDepartmentId: string | null, input: { username?: string; displayName?: string; departmentId: string }) {
@@ -572,6 +720,21 @@ export class PrismaAdministrationRepository implements AdministrationRepository 
         await transaction.employeeApprover.createMany({
           data: assignments.map((assignment) => ({ employeeId, ...assignment }))
         });
+      }
+    });
+  }
+
+  async countActiveAdmins() {
+    return this.database.user.count({
+      where: {
+        role: "ADMIN",
+        accountStatus: "ACTIVE",
+        employmentStatus: "ACTIVE",
+        deletedAt: null,
+        recycledAt: null,
+        archivePurgingAt: null,
+        archivePurgedAt: null,
+        OR: [{ loginDisabledAt: null }, { loginDisabledAt: { gt: new Date() } }]
       }
     });
   }

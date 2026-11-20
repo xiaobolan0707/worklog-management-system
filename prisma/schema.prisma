@@ -82,6 +82,18 @@ enum LoginOutcome {
   LOCKED
 }
 
+enum PlanRating {
+  MET
+  DELAYED
+  UNMET
+}
+
+enum WorkPlanStatus {
+  DRAFT
+  SUBMITTED
+  RATED
+}
+
 model Department {
   id              String           @id @default(cuid())
   name            String           @unique @db.VarChar(100)
@@ -139,6 +151,8 @@ model User {
   auditActions       AuditEvent[]    @relation("AuditActor")
   auditSubjects      AuditEvent[]    @relation("AuditSubject")
   settingChanges     SystemSetting[] @relation("SettingUpdater")
+  workPlans          WorkPlan[]      @relation("EmployeePlans")
+  ratedPlans         WorkPlan[]      @relation("PlanRater")
 
   @@index([departmentId])
   @@map("users")
@@ -382,4 +396,28 @@ model SystemSetting {
   updatedBy   User?    @relation("SettingUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@map("system_settings")
+}
+
+/// 每日工作计划：员工填目标与截止时间，直属审批人评星。
+/// 与日志的红灰定色是两套独立口径，互不影响。
+model WorkPlan {
+  id          String         @id @default(cuid())
+  employeeId  String         @map("employee_id")
+  workDate    DateTime       @map("work_date") @db.Date
+  target      String         @db.VarChar(500)
+  dueAt       DateTime?      @map("due_at") @db.Timestamptz(3)
+  status      WorkPlanStatus @default(DRAFT)
+  rating      PlanRating?
+  ratedById   String?        @map("rated_by_id")
+  ratedAt     DateTime?      @map("rated_at") @db.Timestamptz(3)
+  note        String?        @db.VarChar(500)
+  submittedAt DateTime?      @map("submitted_at") @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  employee    User           @relation("EmployeePlans", fields: [employeeId], references: [id], onDelete: Restrict)
+  ratedBy     User?          @relation("PlanRater", fields: [ratedById], references: [id], onDelete: SetNull)
+
+  @@unique([employeeId, workDate])
+  @@index([status, workDate])
+  @@map("work_plans")
 }

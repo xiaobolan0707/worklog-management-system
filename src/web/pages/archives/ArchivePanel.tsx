@@ -37,7 +37,17 @@ export function ArchivePanel({ employeeId, recycled = false, onLoaded }: { emplo
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
+  // 上传状态按分类隔离：上传 A 不会把 B/C 的入口也标成「上传中」。
+  const [busyCategory, setBusyCategory] = useState<string | null>(null);
+  const [failedCategory, setFailedCategory] = useState<string | null>(null);
+  // 上传成功后在入口处短暂显示勾选，再回弹复位（neumorphic-ui / 文件上传模式）。
+  const [uploadedCategory, setUploadedCategory] = useState<string | null>(null);
   const base = recycled ? `/recycle-bin/${employeeId}` : `/archives/${employeeId}`;
+  useEffect(() => {
+    if (!uploadedCategory) return;
+    const timer = window.setTimeout(() => setUploadedCategory(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [uploadedCategory]);
   useEffect(() => {
     let active = true;
     setArchive(null); setError("");
@@ -54,10 +64,12 @@ export function ArchivePanel({ employeeId, recycled = false, onLoaded }: { emplo
     catch (cause) { setError(requestMessage(cause, "保存失败，请重试")); } finally { setBusy(false); }
   }
   async function upload(category: string, file: File, input: HTMLInputElement) {
-    if (file.size > 10 * 1024 * 1024) { setError("单个附件不能超过 10 MB"); input.value = ""; return; }
-    setBusy(true); setError(""); setNotice("");
-    try { await apiRequest(`${base}/attachments`, { method: "POST", body: JSON.stringify({ category, name: file.name, data: await readFile(file) }) }); setNotice("附件已上传"); setReload((n) => n + 1); }
-    catch (cause) { setError(requestMessage(cause, "附件上传失败，请重试")); } finally { input.value = ""; setBusy(false); }
+    if (file.size > 10 * 1024 * 1024) { setError("单个附件不能超过 10 MB"); setFailedCategory(category); input.value = ""; return; }
+    setBusyCategory(category); setFailedCategory(null); setUploadedCategory(null);
+    setError(""); setNotice("");
+    try { await apiRequest(`${base}/attachments`, { method: "POST", body: JSON.stringify({ category, name: file.name, data: await readFile(file) }) }); setNotice("附件已上传"); setUploadedCategory(category); setReload((n) => n + 1); }
+    catch (cause) { setError(requestMessage(cause, "附件上传失败，请重试")); setFailedCategory(category); }
+    finally { input.value = ""; setBusyCategory(null); }
   }
   async function remove(id: string, fileName: string) {
     if (!window.confirm(`确定删除附件“${fileName}”吗？删除后需重新上传。`)) return;
@@ -66,6 +78,16 @@ export function ArchivePanel({ employeeId, recycled = false, onLoaded }: { emplo
     catch (cause) { setError(requestMessage(cause, "附件删除失败，请重试")); } finally { setBusy(false); }
   }
   const editable = archive?.canEdit && archive.employmentStatus === "ACTIVE" && !recycled;
+
+  function statusText(category: string, label: string, count: number) {
+    if (busyCategory === category) return "正在上传…";
+    if (failedCategory === category) return "上传失败，请重试";
+    if (!editable) return "只读档案，无法上传附件";
+    if (count >= 10) return "已达 10 份上限";
+    if (count) return `已上传 ${count} / 10 份${uploadedCategory === category ? " · 本次上传成功" : ""}`;
+    return `尚未上传${label}`;
+  }
+
   return <div className="archive-content" aria-busy={busy}>
     {error && <div className="department-feedback"><p role="alert" className="form-error">{error}</p>{!archive && <button className="btn secondary" onClick={() => setReload((n) => n + 1)}>重新加载</button>}</div>}
     {notice && <p role="status" className="notice">{notice}</p>}
@@ -77,10 +99,55 @@ export function ArchivePanel({ employeeId, recycled = false, onLoaded }: { emplo
       </section>
       <section className="panel"><h2>资料补齐进度</h2><p>{archive.complete ? "资料已补齐" : "资料待补齐"} · 补齐截止日：{archiveDate(archive.completionDeadline)}</p>{!archive.complete && <p className="muted">待补齐：{archive.missing.map((field) => missingLabels[field] ?? field).join("、")}。工号与任职日期由人事维护。</p>}</section>
       <section className="panel"><h2>档案附件</h2><p className="muted">支持 PDF、JPG、PNG、DOCX；每份不超过 10 MB，每类最多 10 份。</p>
-        {Object.entries(archiveCategories).map(([category, label]) => { const files = archive.attachments.filter((file) => file.category === category); return <section className="archive-attachment-group" key={category}><h3>{label}<span className="muted">（{files.length}/10）</span></h3>
-          {files.length ? <ul className="archive-files">{files.map((file) => { const [baseName, ext] = splitFileName(file.name); return <li key={file.id}><a href={`/api${base}/attachments/${file.id}`} download={file.name} title={file.name}><span className="file-base">{baseName}</span><span className="file-ext">{ext}</span></a><small className="muted">{(file.size / 1024).toFixed(0)} KB</small>{editable && <button type="button" className="btn secondary" disabled={busy} aria-label={`删除附件${file.name}`} onClick={() => void remove(file.id, file.name)}>删除</button>}</li>; })}</ul> : <p className="muted">尚未上传{label}</p>}
-          {editable && <label className="field archive-upload"><span>上传{label}</span><input type="file" accept=".pdf,.jpg,.jpeg,.png,.docx" disabled={busy || files.length >= 10} onChange={(event) => { const input = event.currentTarget; const file = input.files?.[0]; if (file) void upload(category, file, input); }} /></label>}
-        </section>; })}
+        {Object.entries(archiveCategories).map(([category, label], categoryIndex) => {
+          const files = archive.attachments.filter((file) => file.category === category);
+          const full = files.length >= 10;
+          const currentBusy = busyCategory === category;
+          const uploadDisabled = currentBusy || full;
+          return <section className="archive-attachment-group" key={category} aria-busy={currentBusy}>
+            <div className="au-head">
+              <h3>{label}<span className="muted">（{files.length}/10）</span></h3>
+              <span className="au-tag">{String(categoryIndex + 1).padStart(2, "0")} / 03 · 附件上传</span>
+            </div>
+            <div className="au-well">
+              {editable ? (
+                <label className="au-trigger-wrap">
+                  <input
+                    className="au-input"
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.docx"
+                    disabled={uploadDisabled}
+                    aria-label={`上传${label}`}
+                    aria-describedby={`au-status-${category}`}
+                    onChange={(event) => { const input = event.currentTarget; const file = input.files?.[0]; if (file) void upload(category, file, input); }}
+                  />
+                  <span className={`au-trigger${uploadedCategory === category ? " au-success" : ""}`}>
+                    {uploadedCategory === category
+                      ? <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" /></svg>
+                      : <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 13V3m0 0L4.5 6.5M8 3l3.5 3.5" /></svg>}
+                    {currentBusy ? "上传中…" : full ? "已达 10 份上限" : uploadedCategory === category ? "附件已上传" : `上传${label}`}
+                  </span>
+                </label>
+              ) : <span className="au-readonly">只读档案，无法上传附件</span>}
+              <div
+                className="au-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={10}
+                aria-valuenow={files.length}
+                aria-label={`${label}已上传份数`}
+              >
+                <div className="au-fill" style={{ width: `${(files.length / 10) * 100}%` }} />
+              </div>
+              <p
+                className={`au-status${failedCategory === category ? " au-error" : ""}`}
+                id={`au-status-${category}`}
+                aria-live="polite"
+              >{statusText(category, label, files.length)}</p>
+            </div>
+            {files.length ? <ul className="archive-files">{files.map((file) => { const [baseName, ext] = splitFileName(file.name); return <li key={file.id}><a href={`/api${base}/attachments/${file.id}`} download={file.name} title={file.name}><span className="file-base">{baseName}</span><span className="file-ext">{ext}</span></a><small className="muted">{(file.size / 1024).toFixed(0)} KB</small>{editable && <button type="button" className="btn secondary" disabled={busy} aria-label={`删除附件${file.name}`} onClick={() => void remove(file.id, file.name)}>删除</button>}</li>; })}</ul> : null}
+          </section>;
+        })}
       </section>
     </>}
   </div>;

@@ -7,6 +7,7 @@ interface AuthContextValue {
   loading: boolean;
   login(username: string, password: string): Promise<void>;
   changeInitialPassword(currentPassword: string, newPassword: string): Promise<void>;
+  changePassword(currentPassword: string, newPassword: string): Promise<void>;
   logout(): Promise<void>;
 }
 
@@ -38,11 +39,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(result.user);
     },
     async changeInitialPassword(currentPassword, newPassword) {
-      await apiRequest("/auth/change-initial-password", {
+      const result = await apiRequest<{ csrfToken?: string }>("/auth/change-initial-password", {
         method: "POST",
         body: JSON.stringify({ currentPassword, newPassword })
       });
+      // SEC-10：改密后服务端轮换 CSRF Token，前端必须同步。
+      if (result?.csrfToken) setCsrfToken(result.csrfToken);
       setUser((current) => current ? { ...current, mustChangePassword: false } : current);
+    },
+    async changePassword(currentPassword, newPassword) {
+      const result = await apiRequest<{ csrfToken?: string }>("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      if (result?.csrfToken) setCsrfToken(result.csrfToken);
     },
     async logout() {
       await apiRequest("/auth/logout", { method: "POST" });

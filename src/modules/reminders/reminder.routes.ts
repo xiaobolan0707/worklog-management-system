@@ -21,9 +21,8 @@ export const reminderRoutes: FastifyPluginAsync<{
         request.headers["x-csrf-token"] as string | undefined
       );
       const { id } = paramsSchema.parse(request.params);
-      const visible = await options.reminderService.list(request.authenticated!.user.id, request.authenticated!.user.role === "HR");
-      if (!visible.some((reminder) => reminder.id === id && (request.authenticated!.user.role !== "HR" || reminder.kind === "ARCHIVE_OVERDUE"))) throw new ReminderError(404, "REMINDER_NOT_FOUND", "提醒不存在");
-      return { reminder: await options.reminderService.markRead(request.authenticated!.user.id, id) };
+      // PERF-02：按 id + recipientId 直接命中，不再先拉取全量提醒做可见性判断。
+      return { reminder: await options.reminderService.markRead(request.authenticated!.user.id, id, request.authenticated!.user.role === "HR") };
     } catch (error) {
       if (error instanceof ReminderError || error instanceof AuthError) {
         return reply.code(error.statusCode).send({ code: error.code, message: error.message });

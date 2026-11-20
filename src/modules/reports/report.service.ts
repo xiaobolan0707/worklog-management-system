@@ -45,6 +45,7 @@ export function buildPeriodStats(rows: StatRow[]) {
   };
 }
 
+/** 排行榜功能统一由 plans 模块提供（工作计划评星口径），本服务只负责周期红灰统计。 */
 export interface ReportRepository {
   listStats(employeeIds: string[] | null, start: string, end: string): Promise<StatRow[]>;
 }
@@ -72,8 +73,9 @@ export class PrismaReportRepository implements ReportRepository {
           lte: new Date(`${end}T00:00:00.000Z`)
         }
       },
-      include: {
-        approvalSteps: true,
+      select: {
+        status: true, color: true, workDate: true, submittedAt: true,
+        approvalSteps: { select: { status: true } },
         versions: { select: { createdAt: true }, orderBy: { createdAt: "asc" }, take: 1 }
       }
     });

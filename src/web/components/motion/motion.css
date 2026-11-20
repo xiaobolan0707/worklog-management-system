@@ -1,0 +1,368 @@
+/* Motion Prompt 动效组件库 · 全部引用 styles.css 语义令牌，换皮自动跟随。
+   元素版权：MIT License (c) 2026 Shohei Ohtaki
+   #056 https://showheyohtaki.github.io/motion-prompt/#056
+   #069 #072 #071 #050 #049 #053 #054 #052 #060 #057 #068 同域同编号。
+   时长/缓动/位移取自各元素原始规格，视觉与内容替换为本系统。 */
+
+/* ---------- #056 Toast 轻提示 ---------- */
+.mp-toast {
+  position: fixed; right: 18px; bottom: 16px; z-index: 60;
+  display: flex; align-items: center; gap: 10px;
+  width: 214px; min-height: 52px; padding: 0 14px;
+  border-radius: var(--r-control); background: #26282c; color: #fff;
+  box-shadow: 0 18px 34px rgb(20 24 40 / 25%);
+  font-size: 13px; font-weight: 500; letter-spacing: .01em;
+  animation: mp-toast-life 2.15s var(--ease-move) both;
+}
+.mp-toast-ico {
+  flex: 0 0 20px; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--forest-2); color: #fff;
+  font-size: 12px; line-height: 1;
+}
+.mp-toast.info .mp-toast-ico { background: var(--muted); }
+.mp-toast-bar {
+  position: absolute; left: 10px; bottom: 6px; height: 3px;
+  border-radius: 2px; background: rgb(255 255 255 / 38%);
+  animation: mp-toast-bar 1.8s linear 350ms both;
+}
+@keyframes mp-toast-life {
+  0%   { transform: translateX(calc(100% + 24px)); opacity: 0; }
+  16%  { transform: translateX(0); opacity: 1; }
+  84%  { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(calc(100% + 24px)); opacity: 0; }
+}
+@keyframes mp-toast-bar { from { width: calc(100% - 20px); } to { width: 0; } }
+
+/* ---------- #069 Skeleton 骨架屏 ---------- */
+.mp-skeleton {
+  position: relative; overflow: hidden; display: grid; gap: 12px;
+  padding: 18px 20px; border: 1px solid var(--line);
+  border-radius: var(--r-md); background: var(--paper);
+  animation: mp-fade-in 150ms linear both;
+}
+.mp-skeleton::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -160px; width: 160px;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0), rgb(255 255 255 / .8), rgb(255 255 255 / 0));
+  animation: mp-sweep .9s linear infinite;
+  pointer-events: none;
+}
+@keyframes mp-sweep { from { left: -160px; } to { left: 100%; } }
+.mp-sk-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: start; }
+.mp-sk-av, .mp-sk-l { background: #e9e7e5; border-radius: var(--r-sm); }
+.mp-sk-av { width: 44px; height: 44px; }
+.mp-sk-lines { display: grid; gap: 7px; padding-top: 3px; }
+.mp-sk-l1 { height: 11px; width: 62%; border-radius: 6px; }
+.mp-sk-l2 { height: 9px; width: 96%; border-radius: 5px; }
+.mp-sk-l3 { height: 9px; width: 74%; border-radius: 5px; }
+.mp-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* ---------- #072 Empty state 空态 ---------- */
+.mp-empty {
+  display: grid; justify-items: center; align-content: center; gap: 8px;
+  min-height: 190px; padding: 24px; border: 1px solid var(--line);
+  border-radius: var(--r-md); background: var(--paper); color: var(--muted);
+  animation: mp-empty-in 350ms var(--ease-out) both;
+}
+.mp-empty svg { color: var(--forest); opacity: .72; }
+.mp-empty p { margin: 2px 0 0; font-size: 14px; color: var(--ink); }
+.mp-empty small { font-size: 12px; line-height: 1.7; text-align: center; }
+.mp-empty .btn { margin-top: 8px; }
+@keyframes mp-empty-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes mp-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- #071 Badge 角标 ---------- */
+.mp-badge-wrap { position: relative; display: inline-flex; }
+.mp-badge {
+  position: relative; min-width: 18px; height: 18px; padding: 0 5px;
+  display: grid; place-items: center; border: 0; border-radius: 9px;
+  background: var(--forest); color: #fff;
+  font: 500 11px ui-monospace, "SF Mono", Consolas, monospace;
+  box-shadow: 0 0 0 2px var(--paper);
+  transform: scale(0); transition: transform 200ms var(--ease-out);
+}
+.mp-badge.on { transform: scale(1); }
+.mp-badge.pop { animation: mp-badge-pop 300ms var(--ease-out); }
+@keyframes mp-badge-pop { 0% { transform: scale(1.3); } 100% { transform: scale(1); } }
+.mp-badge-ring {
+  position: absolute; inset: 0; border-radius: 9px;
+  border: 2px solid var(--forest); opacity: 0; pointer-events: none;
+}
+.mp-badge.pop .mp-badge-ring { animation: mp-badge-ring 500ms var(--ease-out); }
+@keyframes mp-badge-ring { 0% { opacity: .5; transform: scale(.7); } 100% { opacity: 0; transform: scale(1.7); } }
+
+/* ---------- #050 Drawer / #049 Modal 共用浮层 ---------- */
+.mp-layer {
+  position: fixed; inset: 0; z-index: 50;
+  visibility: hidden; pointer-events: none;
+  transition: visibility 0s linear 380ms;
+}
+.mp-layer.on { visibility: visible; pointer-events: auto; transition-delay: 0s; }
+.mp-scrim {
+  position: absolute; inset: 0; background: rgb(18 20 28); opacity: 0;
+  transition: opacity var(--dur-overlay) var(--ease-out);
+}
+.mp-layer.on .mp-scrim { opacity: .36; }
+.mp-drawer {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: min(360px, 90vw); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px; padding: 24px;
+  border-left: 1px solid var(--line); background: var(--paper);
+  box-shadow: -14px 0 32px rgb(20 24 40 / 18%);
+  transform: translateX(100%); transition: transform 380ms var(--ease-out);
+}
+.mp-layer.on .mp-drawer { transform: none; }
+.mp-drawer h2, .mp-modal h2 { margin: 0; padding-right: 28px; font-size: 17px; font-weight: 500; letter-spacing: -.01em; }
+.mp-layer-x {
+  position: absolute; top: 18px; right: 18px; width: 26px; height: 26px;
+  display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted); font-size: 17px; line-height: 1;
+}
+.mp-layer-x:hover { background: var(--subtle); color: var(--ink); }
+.mp-modal {
+  position: absolute; left: 50%; top: 50%; width: min(340px, 92vw); padding: 24px;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper);
+  box-shadow: 0 24px 48px rgb(20 24 40 / 25%);
+  opacity: 0; transform: translate(-50%, -50%) scale(.9);
+  transition: opacity var(--dur-overlay) var(--ease-out), transform var(--dur-overlay) var(--ease-out);
+}
+.mp-layer.on .mp-modal { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.mp-layer-modal.on .mp-scrim { opacity: .42; }
+.mp-modal p { margin: 8px 0 18px; font-size: 13px; line-height: 1.8; color: var(--muted); }
+.mp-modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ---------- #053 Dropdown 下拉 ---------- */
+.mp-select-wrap { position: relative; min-width: 0; }
+.mp-select {
+  width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 8px 12px; border: 1px solid var(--control);
+  border-radius: var(--r-control); background: var(--paper);
+  color: var(--ink); font-size: 13px; text-align: left;
+  transition: border-color var(--dur-hover) var(--ease-standard), box-shadow 250ms var(--ease-out);
+}
+.mp-select:hover { border-color: var(--control-hover); }
+.mp-select .mp-placeholder { color: var(--muted); }
+.mp-select.on { border-color: var(--forest); box-shadow: 0 0 0 1px var(--forest); }
+.mp-select svg { flex: 0 0 auto; color: var(--muted); transition: transform 250ms var(--ease-move); }
+.mp-select.on svg { transform: rotate(180deg); }
+.mp-menu {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 12;
+  margin: 0; padding: 4px; list-style: none;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper);
+  box-shadow: 0 12px 26px rgb(20 24 40 / 16%);
+  opacity: 0; transform: translateY(-6px); pointer-events: none;
+  transition: opacity 250ms var(--ease-out), transform 250ms var(--ease-out);
+}
+.mp-menu.on { opacity: 1; transform: none; pointer-events: auto; }
+.mp-menu li {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 30px; padding: 4px 8px; border-radius: var(--r-xs);
+  font-size: 13px; cursor: pointer;
+  transition: background-color 120ms linear, color 120ms linear;
+}
+.mp-menu li:hover { background: var(--subtle); color: var(--forest); }
+.mp-menu li[aria-selected="true"] { color: var(--forest); font-weight: 500; }
+.mp-menu li i { font-style: normal; opacity: 0; }
+.mp-menu li[aria-selected="true"] i { opacity: 1; }
+
+/* ---------- #054 Tooltip ---------- */
+.mp-tt-anchor { position: relative; display: inline-flex; vertical-align: middle; }
+.mp-tt-q {
+  width: 18px; height: 18px; display: grid; place-items: center;
+  border: 1.5px solid var(--control); border-radius: 50%;
+  background: var(--paper); color: var(--muted); font-size: 11px; line-height: 1;
+  transition: border-color var(--dur-hover), color var(--dur-hover);
+}
+.mp-tt-q:hover, .mp-tt-q:focus-visible { border-color: var(--forest); color: var(--forest); }
+.mp-tt-bubble {
+  position: absolute; right: -8px; bottom: calc(100% + 12px);
+  width: 210px; padding: 8px 10px; border-radius: var(--r-sm);
+  background: #26282c; color: #fff; font-size: 12px; line-height: 1.7; text-align: left;
+  box-shadow: 0 10px 22px rgb(20 24 40 / 22%); z-index: 20;
+  opacity: 0; transform: translateY(6px); pointer-events: none;
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+.mp-tt-bubble::after {
+  content: ""; position: absolute; right: 16px; bottom: -4px;
+  width: 8px; height: 8px; background: #26282c; transform: rotate(45deg);
+}
+.mp-tt-anchor:hover .mp-tt-bubble, .mp-tt-anchor:focus-within .mp-tt-bubble { opacity: 1; transform: none; }
+
+/* ---------- #052 Accordion 折叠 ---------- */
+.mp-acc { display: grid; gap: 6px; }
+.mp-acc-item {
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--paper); overflow: hidden;
+  transition: border-color var(--dur-hover) var(--ease-standard);
+}
+.mp-acc-item.open { border-color: #cbdad3; }
+.mp-acc-head {
+  width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 8px 12px; border: 0; background: transparent;
+  color: var(--ink); font-size: 13px; text-align: left;
+}
+.mp-acc-item.open .mp-acc-head { color: var(--forest); font-weight: 500; }
+.mp-acc-head svg { flex: 0 0 auto; color: var(--muted); transition: transform 350ms var(--ease-move), color 350ms var(--ease-move); }
+.mp-acc-item.open .mp-acc-head svg { transform: rotate(180deg); color: var(--forest); }
+.mp-acc-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 350ms var(--ease-move); }
+.mp-acc-item.open .mp-acc-body { grid-template-rows: 1fr; }
+.mp-acc-inner { overflow: hidden; opacity: 0; transition: opacity 250ms linear 60ms; }
+.mp-acc-item.open .mp-acc-inner { opacity: 1; }
+.mp-acc-inner > div { padding: 0 12px 12px; font-size: 12.5px; line-height: 1.8; color: var(--muted); }
+
+/* ---------- #060 Segmented 分段控制 ---------- */
+.mp-seg {
+  position: relative; display: grid; gap: 0; flex: 0 0 auto; align-self: flex-start;
+  padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--subtle);
+}
+.mp-seg-thumb {
+  position: absolute; top: 3px; bottom: 3px; left: 3px;
+  border-radius: 999px; background: var(--paper); box-shadow: var(--shadow);
+  transition: left 250ms var(--ease-move); pointer-events: none;
+}
+.mp-seg button {
+  position: relative; z-index: 1; min-height: 32px; padding: 4px 14px;
+  border: 0; border-radius: 999px; background: transparent;
+  color: var(--muted); font-size: 12px; white-space: nowrap;
+  transition: color 250ms var(--ease-move);
+}
+.mp-seg button[aria-pressed="true"] { color: var(--forest); font-weight: 500; }
+
+/* ---------- #057 Tabs 标签页 ---------- */
+.mp-tabs { position: relative; display: flex; gap: 20px; border-bottom: 1px solid var(--line); }
+.mp-tabs button {
+  border: 0; background: transparent; padding: 0 0 10px;
+  color: var(--muted); font-size: 13px;
+  transition: color var(--dur-hover) var(--ease-out);
+}
+.mp-tabs button[aria-selected="true"] { color: var(--forest); font-weight: 600; }
+.mp-tabs-ul {
+  position: absolute; bottom: -1px; left: 0; width: 0; height: 2px;
+  border-radius: 2px; background: var(--forest);
+  transition: left 250ms var(--ease-move), width 250ms var(--ease-move);
+}
+.mp-tab-panel { min-height: 120px; animation: mp-tab-in 200ms var(--ease-out) 100ms both; }
+.mp-tab-panel.out { animation: none; opacity: 0; transition: opacity 200ms linear; }
+@keyframes mp-tab-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ---------- #068 Step 步骤指示 ---------- */
+.mp-steps { position: relative; display: flex; justify-content: space-between; padding: 0 6px; }
+.mp-step-track, .mp-step-line {
+  position: absolute; top: 14px; height: 3px; border-radius: 2px;
+}
+.mp-step-track { background: var(--line); }
+.mp-step-line { background: var(--forest); transition: width 300ms var(--ease-move); }
+.mp-step { position: relative; z-index: 1; display: grid; justify-items: center; gap: 6px; width: 56px; }
+.mp-step-dot {
+  width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%;
+  border: 2px solid var(--line); background: var(--paper); color: var(--muted);
+  font: 500 12px ui-monospace, "SF Mono", Consolas, monospace;
+  transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out), color 200ms var(--ease-out);
+}
+.mp-step.done .mp-step-dot, .mp-step.cur .mp-step-dot { background: var(--forest); border-color: var(--forest); color: #fff; }
+.mp-step small { font-size: 11px; color: var(--muted); text-align: center; transition: color 200ms var(--ease-out); }
+.mp-step.done small, .mp-step.cur small { color: var(--forest); }
+
+/* ---------- 组件实验室页面 ---------- */
+.mp-lab { display: grid; gap: 24px; }
+.mp-lab-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.mp-lab-head h1 { font-size: 28px; font-weight: 500; letter-spacing: -.02em; margin: 0 0 6px; }
+.mp-lab-head p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; max-width: 70ch; }
+.mp-lab-tag {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--subtle);
+  font-size: 12px; color: var(--muted);
+}
+.mp-lab-section { display: grid; gap: 14px; }
+.mp-lab-section > h2 {
+  display: flex; align-items: baseline; gap: 10px; margin: 0;
+  font-size: 13px; font-weight: 500; color: var(--ink);
+}
+.mp-lab-section > h2 span { font: 400 12px ui-monospace, "SF Mono", Consolas, monospace; color: var(--forest); }
+.mp-lab-section > h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.mp-lab-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.mp-card {
+  display: flex; flex-direction: column; min-width: 0;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper);
+}
+.mp-card-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 0; }
+.mp-card-id {
+  font: 400 11px ui-monospace, "SF Mono", Consolas, monospace;
+  color: var(--forest); background: var(--subtle); border-radius: var(--r-xs); padding: 1px 6px;
+}
+.mp-card h3 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+.mp-card-use { margin: 7px 16px 0; font-size: 12.5px; line-height: 1.7; color: var(--muted); }
+.mp-card-use b { color: var(--ink); font-weight: 500; }
+.mp-stage {
+  position: relative; min-height: 176px; margin: 12px 16px 0; padding: 14px;
+  border: 1px solid var(--line-soft); border-radius: var(--r-control);
+  background: var(--surface-2); overflow: hidden;
+}
+.mp-stage-tall { min-height: 238px; }
+.mp-em-row { transition: opacity 300ms var(--ease-move), transform 300ms var(--ease-move); }
+.mp-em-row.out { opacity: 0; transform: translateX(-60px); }
+.mp-card-foot {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 12px 16px 14px; margin-top: auto;
+}
+.mp-card-foot p { margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mp-card-foot code { font: 400 11px ui-monospace, "SF Mono", Consolas, monospace; color: var(--ink); }
+.mp-card-foot a { font-size: 11.5px; color: var(--forest); text-decoration: none; white-space: nowrap; }
+.mp-card-foot a:hover { text-decoration: underline; }
+.mp-demo-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.mp-demo-note { font-size: 12px; color: var(--muted); line-height: 1.7; }
+.mp-metric { font: 400 26px ui-monospace, "SF Mono", Consolas, monospace; letter-spacing: -.02em; color: var(--forest); line-height: 1.2; }
+.mp-metric-kicker { font-size: 11px; color: var(--muted); }
+.mp-metric-note { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.mp-metric-row {
+  position: absolute; left: 14px; right: 14px; bottom: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 8px; border-top: 1px solid var(--line-soft);
+  font-size: 11.5px; color: var(--muted);
+}
+.mp-bars { display: flex; align-items: flex-end; gap: 8px; height: 74px; margin-top: 14px; border-bottom: 1px solid var(--line); }
+.mp-bars i { flex: 1; border-radius: 3px 3px 0 0; background: var(--line); transition: height 250ms var(--ease-move); }
+.mp-bars i.hi { background: var(--forest); }
+.mp-bars-cap { display: flex; justify-content: space-between; margin-top: 4px; font-size: 10.5px; color: var(--muted); }
+.mp-tab-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 12px;
+}
+.mp-tab-row:last-child { border-bottom: 0; }
+.mp-tab-row span { color: var(--muted); }
+.mp-tab-row b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.mp-step-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line-soft);
+  font-size: 11.5px; color: var(--muted);
+}
+.mp-fake-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 40px; margin-bottom: 8px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper);
+  font-size: 12px;
+}
+.mp-fake-row button { flex: 0 0 auto; }
+.mp-lab-foot {
+  margin-top: 8px; padding: 18px 20px; border: 1px solid var(--line);
+  border-left: 2px solid var(--forest); border-radius: var(--r-sm);
+  background: var(--paper); font-size: 13px; line-height: 1.8; color: var(--muted);
+}
+.mp-lab-foot b { color: var(--ink); font-weight: 500; }
+.mp-lab-foot code { font: 400 12px ui-monospace, "SF Mono", Consolas, monospace; color: var(--forest); }
+
+@media (max-width: 1100px) { .mp-lab-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .mp-lab-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* 减少动效：全局 reduce 规则已把 transition/animation 置空，这里补齐依赖动画的初始态 */
+@media (prefers-reduced-motion: reduce) {
+  .mp-toast { transform: none; opacity: 1; }
+  .mp-toast-bar { width: 0; }
+  .mp-skeleton::after { display: none; }
+  .mp-badge { transform: none; }
+  .mp-menu, .mp-tt-bubble { transform: none; }
+  .mp-tab-panel { opacity: 1; transform: none; }
+  .mp-empty, .mp-skeleton { opacity: 1; transform: none; }
+}

@@ -51,7 +51,11 @@ export const reportRoutes: FastifyPluginAsync<{
 
   app.get("/api/reports/employees", { preHandler: app.requireRole("EMPLOYEE", "LEADER", "MANAGEMENT", "ADMIN") }, reportHandler);
   app.get("/api/reports/departments", { preHandler: app.requireRole("LEADER", "MANAGEMENT", "ADMIN") }, reportHandler);
-  app.get("/api/reports/company", { preHandler: app.requireRole("MANAGEMENT", "ADMIN") }, reportHandler);
+  // 产品口径：HR 需要全公司红灰统计（与其日志监督职责一致），与管理层同权；
+  // LEADER 仍由 employeeScope 收敛到审批授权员工，不会看到其他部门。
+  app.get("/api/reports/company", { preHandler: app.requireRole("LEADER", "MANAGEMENT", "ADMIN", "HR") }, reportHandler);
+  // 排行榜统一走 plans 模块的 /api/reports/plan-leaderboard（工作计划评星口径）。
+  // 这里不再保留基于 daily_logs 红灰定色的同名端点，避免两套口径混淆。
 
   app.post(
     "/api/rewards/confirm",

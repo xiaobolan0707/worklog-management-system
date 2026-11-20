@@ -45,4 +45,7 @@ export const archiveRoutes: FastifyPluginAsync<{ archiveService: ArchiveService;
   app.get("/api/recycle-bin/:id/logs", { preHandler: management }, async (request, reply) => {
     try { return await archiveService.recycledLogs(request.authenticated!.user, params.parse(request.params).id); } catch (error) { return sendAdministrationError(reply, error); }
   });
+  app.get("/api/recycle-bin/:id/plans", { preHandler: management }, async (request, reply) => {
+    try { return await archiveService.recycledPlans(request.authenticated!.user, params.parse(request.params).id); } catch (error) { return sendAdministrationError(reply, error); }
+  });
 };

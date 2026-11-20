@@ -1,0 +1,144 @@
+/* ============================================================
+   珍珠玻璃换皮（本地预览用）
+   原则：只覆盖令牌与材质，不改任何组件结构与业务语义。
+   本文件必须在 neumorphic.css 之后引入（见 main.tsx），以便覆盖其硬编码的软拟物阴影。
+   删除 main.tsx 中的两行 import 即可完整还原，无需回滚其他文件。
+   ============================================================ */
+
+/* 1. 令牌覆盖：蓝 = 选择 / 主操作，青柠 = 正常状态，红 = 警示 */
+body[data-skin="pearl"] {
+  --forest: #236de9;
+  --forest-2: #1d61d5;
+  --ink: #101418;
+  --muted: #596368;
+  --line: rgba(46, 58, 62, .11);
+  --line-soft: rgba(46, 58, 62, .07);
+  --control: rgba(46, 58, 62, .24);
+  --paper: #fff;
+  --ground: #f6f8f7;
+  --subtle: #eef2f1;
+  --surface-2: #f2f6f4;
+  --red: #e0443b;
+  --gray: #7e888c;
+  --green: #4e9118;
+  --shadow: 0 2px 6px rgba(46, 58, 62, .07), 0 20px 44px rgba(46, 58, 62, .09);
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-control: 10px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --neu-surface: #f4f7f6;
+  --neu-well: #f8fbfa;
+  --neu-edge: rgba(46, 58, 62, .24);
+  --neu-raised: inset 0 0 0 1px rgba(120, 132, 135, .13), inset 0 1px 0 rgba(255, 255, 255, .72), 0 2px 8px rgba(46, 58, 62, .05);
+  --neu-pressed: inset 0 1px 3px rgba(46, 58, 62, .12);
+  --neu-primary-raised: 0 1px 2px rgba(20, 66, 148, .28), 0 8px 18px rgba(35, 109, 233, .24);
+  --neu-primary-pressed: inset 0 1px 4px rgba(12, 48, 110, .35);
+  --brand-letter: #194c3d;
+  /* 状态色随冷色玻璃皮肤收敛，避免暖黄/暖红卡片与蓝色主色冲突。 */
+  --warning-soft: #f7f6ef;
+  --warning-line: #e3e2d2;
+  --warning-ink: #7a6a2c;
+  --danger-soft: #fdf1f0;
+  --danger-line: #f0d3d0;
+  --row-hover: #f4f8f7;
+  --medal-rim: #cfd8e8;
+  --medal-slate: #3a4248;
+  --medal-slate-line: #9aa5ac;
+}
+
+/* 2. 外壳与材质：玻璃浮层只用于层级，不降低正文可读性 */
+body[data-skin="pearl"] .sidebar {
+  background: rgba(250, 251, 250, .92);
+  border-right-color: rgba(46, 58, 62, .09);
+  backdrop-filter: blur(16px);
+}
+body[data-skin="pearl"] .topbar {
+  background: rgba(250, 251, 250, .88);
+  backdrop-filter: blur(16px);
+}
+body[data-skin="pearl"] .panel,
+body[data-skin="pearl"] .history-card,
+body[data-skin="pearl"] .work-plan-card,
+body[data-skin="pearl"] .past-comments {
+  background: linear-gradient(145deg, rgba(255, 255, 255, .97), rgba(249, 252, 251, .92));
+  border-color: rgba(46, 58, 62, .09);
+}
+body[data-skin="pearl"] .brand-mark { border-radius: 8px 16px 8px 8px; }
+body[data-skin="pearl"] .nav-link.active {
+  background: rgba(35, 109, 233, .1);
+  color: var(--forest);
+  box-shadow: none;
+}
+body[data-skin="pearl"] .nav-link:not(.active):hover { background: #f0f4f3; }
+body[data-skin="pearl"] .user-avatar { background: #f4f7f6; border-color: transparent; box-shadow: var(--neu-raised); }
+
+/* 3. 控件：覆盖 neumorphic.css 的硬编码绿色阴影 */
+body[data-skin="pearl"] .btn.secondary,
+body[data-skin="pearl"] .icon-button { background: rgba(255, 255, 255, .86); }
+body[data-skin="pearl"] .btn.secondary:hover:not(:disabled),
+body[data-skin="pearl"] .icon-button:hover { background: #f0f5f4; color: var(--forest); }
+body[data-skin="pearl"] .btn:not(:disabled):active,
+body[data-skin="pearl"] .icon-button:not(:disabled):active { box-shadow: var(--neu-pressed); }
+body[data-skin="pearl"] .field :is(input, select, textarea):not(:where([type="checkbox"], [type="radio"], [type="file"])) {
+  background: #fbfdfc;
+  box-shadow: inset 0 0 0 1px rgba(120, 132, 135, .12);
+}
+body[data-skin="pearl"] .field :is(input, select, textarea):focus { background: #fff; border-color: var(--forest); }
+body[data-skin="pearl"] .field :is(input, select, textarea)[aria-invalid="true"] { background: #fff6f5; }
+body[data-skin="pearl"] :is(.settings-day-options, .color-choice) label { background: rgba(255, 255, 255, .86); }
+body[data-skin="pearl"] :is(.settings-day-options, .color-choice) label:has(input:checked) {
+  background: rgba(35, 109, 233, .08);
+  border-color: var(--forest);
+  color: var(--forest);
+  box-shadow: none;
+}
+body[data-skin="pearl"] .department-button.is-selected { background: rgba(35, 109, 233, .1); color: var(--forest); }
+
+/* 4. 业务语义颜色不动：红=完成、灰=未完成、绿=已提交。
+   只把浅底调成中性，避免绿底硬贴在蓝色界面上。 */
+body[data-skin="pearl"] .badge-green { background: #eef4ec; }
+body[data-skin="pearl"] .badge-red { background: #fdeceb; }
+body[data-skin="pearl"] .badge-gray { background: #eef1f0; }
+body[data-skin="pearl"] .badge-wait { background: #fbf3df; }
+body[data-skin="pearl"] .notice { background: #f1f8f5; border-color: #cfe4dc; }
+body[data-skin="pearl"] .reminder-popover { background: rgba(250, 251, 250, .97); backdrop-filter: blur(20px); }
+body[data-skin="pearl"] .form-error { background: #fff3f1; border-color: #f3d2cf; }
+body[data-skin="pearl"] .item-comment-reply { background: #f1f8f5; border-left-color: var(--green); }
+
+/* ============================================================
+   5. 信纸保留区（硬要求）
+   信纸本体逐像素不变：把主题变量在 .letter-paper 作用域内锁回原值，
+   因此表头深绿、横格纸纹、7:3 双栏、批注栏、签名栏都不受换皮影响。
+   另用 box-shadow 外圈做一层暖纸垫，作为玻璃界面与米白信纸之间的材质过渡，
+   不需要改动任何 DOM。
+   ============================================================ */
+body[data-skin="pearl"] .letter-paper {
+  --forest: #194c3d;
+  --forest-2: #27634f;
+  --r-lg: 14px;
+  --r-sm: 9px;
+  --muted: #626f68;
+  --red: #b63b35;
+  --paper: #fff;
+  --line: #e1e7e3;
+  --letter-ground: #fffdf7;
+  --letter-rule: #e9e2d1;
+  --letter-edge: #d9d4c5;
+  margin: 12px;
+  box-shadow: 0 0 0 10px #f7f4ea, 0 0 0 11px #ece7d8, 0 16px 36px rgba(46, 58, 62, .1);
+}
+body[data-skin="pearl"] .letter-heading { background: #194c3d; }
+body[data-skin="pearl"] .work-index { background: #edf3f0; color: #194c3d; }
+body[data-skin="pearl"] .letter-comment-column { background: rgba(241, 246, 242, .88); }
+body[data-skin="pearl"] .letter-signature { background: #fffaf0; }
+body[data-skin="pearl"] .letter-readonly-item small { color: #b63b35; }
+
+/* 6. 顶栏皮肤切换开关（由 pearl-skin.ts 注入） */
+.skin-switch { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--subtle); }
+.skin-switch button { min-height: 30px; padding: 4px 11px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background-color var(--dur-hover) var(--ease-standard), color var(--dur-hover) var(--ease-standard), box-shadow var(--dur-hover) var(--ease-standard); }
+.skin-switch button[aria-pressed="true"] { background: var(--paper); color: var(--forest); font-weight: 600; box-shadow: var(--shadow); }
+.skin-switch button:focus-visible { outline: 2px solid var(--forest-2); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .skin-switch button { padding: 4px 8px; font-size: 11px; }
+}
