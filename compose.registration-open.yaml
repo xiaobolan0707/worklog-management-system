@@ -1,0 +1,5 @@
+services:
+  app:
+    environment:
+      REGISTRATION_OPEN: "true"
+      REGISTRATION_INVITE_CODE: ""
